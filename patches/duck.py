@@ -51,3 +51,8 @@ PATCHES = [
     # Clip / Slicer pads (engine class B): ENV, LFO2, LFO3 as sources
     hook(0x080685C4, 0x08067018, "env_mod_setup_b"),
 ]
+
+# Granular pads (src/gran.c): kept in their own file, applied with these
+from gran import PATCHES as _GRAN  # noqa: E402
+
+PATCHES += _GRAN
