@@ -18,8 +18,14 @@
  *   Density     per pad, once per engine block (gran_pad_process wraps the pad's block, FUN_080596b0 @0x0805bb5a):
  *               the slots move the knob's value and FUN_08059158 is run, the same as turning the knob. Per-voice
  *               sources (VEL, KEY, LFO, ENV) are read from the pad's first playing voice.
- * Amount: 100 % is the whole knob range. MIDI and duck sources (PTCH, MODW, MVOL, MPAN, CC, EXP1..LINR) are not in
- * the slot list and do nothing on these two.
+ * Sources, all with Amount 100 % = the whole knob range:
+ *   VEL KEY LFO LFO2 LFO3 ENV   the pad's slot list, per voice (the pad-level ones the same for every voice)
+ *   PTCH MODW MVOL MPAN         the pad's MIDI objects (pad +0x13c / 0x124 / 0x12c / 0x134). Stock attaches these
+ *                               straight to a parameter object and drops the slot; env_mod_setup keeps the slot in the
+ *                               list for our two targets (gran_listed), the way it does for ENV.
+ *   CC, EXP1..LINR              engine-wide sources, attached through the pad's vtable +0x40 (FUN_0805511c, which
+ *                               has nothing for our targets). gran_attach keeps them per pad, three slots a target;
+ *                               the pad's reset (cmd 0x40, a preset load) empties them (gran_reset).
  */
 #include <stdint.h>
 
@@ -29,9 +35,13 @@
 typedef void (*grain_start_fn)(uint8_t *pad, void *now, uint8_t *voice, int first, int x, uint8_t *grain);
 typedef int (*pad_process_fn)(uint8_t *pad, void **ctx);
 typedef void (*density_fn)(uint8_t *pad, void *now);
+typedef void (*attach_fn)(uint8_t *pad, const uint8_t *source, unsigned target, unsigned slot, float amount);
+typedef void (*reset_fn)(uint8_t *obj);
 #define fw_grain_start ((grain_start_fn)FN(0x08057ab0))
 #define fw_pad_process ((pad_process_fn)FN(0x080596b0))
 #define fw_density     ((density_fn)FN(0x08059158))
+#define fw_attach      ((attach_fn)FN(0x0805511c))
+#define fw_reset_obj   ((reset_fn)FN(0x08076080))
 
 #define T_SIZE    0x17c          /* Grain Size (percent knob, "grainsizeperc") */
 #define T_DENSITY 0x180          /* Density ("graindensity") */
@@ -57,6 +67,46 @@ struct entry {
 void *lfo_source(const uint8_t *pad, int k);     /* lfo.c */
 uint8_t *master_block(void);                     /* master.c */
 
+struct ext {
+    const uint8_t *source;       /* value at +4; 0 = slot empty */
+    float amount;
+};
+struct gran_state {
+    uint32_t magic;
+    uint32_t on;                 /* bit per pad: its density is being moved */
+    float knob[16];              /* the value the knob (or a preset) set */
+    float wrote[16];             /* the value written here last, to tell the knob's own changes from ours */
+    struct ext ext[16][2][3];    /* CC and engine-wide sources: pad, Grain Size / Density, slot */
+};
+#define GRAN_MAGIC  0x47524e32u  /* "GRN2" */
+#define GRAN_OFFSET (0x56800u + 0x800u)                  /* in lfo.c's 0x1000 bytes, behind its state */
+_Static_assert(sizeof(struct gran_state) <= 0x800, "lfo.c's block has 0x800 bytes for gran.c");
+
+static struct gran_state *gran_state(void)
+{
+    uint8_t *mem = master_block();
+    if (!mem)
+        return 0;
+    struct gran_state *s = (struct gran_state *)(mem + GRAN_OFFSET);
+    if (s->magic != GRAN_MAGIC) {
+        for (unsigned i = 0; i < sizeof *s / 4; i++)
+            ((volatile uint32_t *)s)[i] = 0;
+        s->magic = GRAN_MAGIC;
+    }
+    return s;
+}
+
+static unsigned pad_index(const uint8_t *pad)
+{
+    uint32_t id = *(const uint32_t *)(pad + 0x18);
+    return ((id >> 8) & 3) * 4 + (id & 3);
+}
+
+static int ours(unsigned target)
+{
+    return target == T_SIZE || target == T_DENSITY;
+}
+
 /* The MOD page's parameter list: stock's 28 (0x080f12bc), then Grain Size and Density. */
 const uint16_t gran_mod_targets[30] = {
     4, 0x62, 0x5c, 0x8f, 0x90, 0x91, 0x92, 0x4e, 0xa2, 0xc8, 0x11, 0x33, 0x32, 0x38, 0x37, 0x3a,
@@ -77,6 +127,10 @@ static const float *source(const uint8_t *pad, const uint8_t *voice, unsigned co
     case 4:    p = voice ? voice + 0x520 : 0; break;     /* the voice's LFO */
     case 0xd:  p = voice ? voice + 0x84 : 0;  break;     /* VEL */
     case 0xe:  p = voice ? voice + 0x8c : 0;  break;     /* KEY */
+    case 0x19: p = pad + 0x13c; break;                   /* PTCH */
+    case 0x1a: p = pad + 0x124; break;                   /* MODW */
+    case 0x1c: p = pad + 0x12c; break;                   /* MVOL */
+    case 0x1d: p = pad + 0x134; break;                   /* MPAN */
     default:   p = 0;
     }
     return p ? (const float *)(p + 4) : 0;
@@ -96,6 +150,15 @@ static int mod_sum(const uint8_t *pad, const uint8_t *voice, unsigned target, fl
         const float *v = source(pad, voice, e[i].source);
         if (v)
             m += e[i].amount * *v;
+    }
+    struct gran_state *s = gran_state();
+    if (s) {
+        const struct ext *x = s->ext[pad_index(pad)][target == T_DENSITY];
+        for (int k = 0; k < 3; k++)
+            if (x[k].source) {
+                routed = 1;
+                m += x[k].amount * *(const float *)(x[k].source + 4);
+            }
     }
     *sum = m;
     return routed;
@@ -121,35 +184,13 @@ void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x,
 
 /* ---- Density: once per block ---- */
 
-struct gran_state {
-    uint32_t magic;
-    uint32_t on;                 /* bit per pad: its density is being moved */
-    float knob[16];              /* the value the knob (or a preset) set */
-    float wrote[16];             /* the value written here last, to tell the knob's own changes from ours */
-};
-#define GRAN_MAGIC  0x4752414eu  /* "GRAN" */
-#define GRAN_OFFSET (0x56800u + 0x800u)                  /* in lfo.c's 0x1000 bytes, behind its state */
-
-static struct gran_state *gran_state(void)
-{
-    uint8_t *mem = master_block();
-    if (!mem)
-        return 0;
-    struct gran_state *s = (struct gran_state *)(mem + GRAN_OFFSET);
-    if (s->magic != GRAN_MAGIC) {
-        for (unsigned i = 0; i < sizeof *s / 4; i++)
-            ((volatile uint32_t *)s)[i] = 0;
-        s->magic = GRAN_MAGIC;
-    }
-    return s;
-}
-
 static void density(uint8_t *pad, void *now)
 {
     struct gran_state *s = gran_state();
     if (!s)
         return;
-    uint32_t id = *(const uint32_t *)(pad + 0x18), q = ((id >> 8) & 3) * 4 + (id & 3), bit = 1u << q;
+    unsigned q = pad_index(pad);
+    uint32_t bit = 1u << q;
     uint8_t *voice = 0;
     int32_t nv = *(const int32_t *)(pad + PAD_NVOICES);
     for (int32_t i = 0; i < nv && i < 16; i++) {
@@ -190,4 +231,36 @@ int gran_pad_process(uint8_t *pad, void **ctx)
     if (pad[PAD_GRANULAR])
         density(pad, ctx[0]);
     return fw_pad_process(pad, ctx);
+}
+
+/* ---- the other ways in ---- */
+
+/* envmod.c's env_mod_setup: keep a PTCH / MODW / MVOL / MPAN slot on our targets in the pad's list. */
+int gran_listed(unsigned target, unsigned source)
+{
+    return ours(target) && (source == 0x19 || source == 0x1a || source == 0x1c || source == 0x1d);
+}
+
+/* Replaces the class A pad's vtable +0x40 (FUN_0805511c @0x080d0708): CC and engine-wide sources on a parameter. */
+void gran_attach(uint8_t *pad, const uint8_t *source, unsigned target, unsigned slot, float amount)
+{
+    struct gran_state *s;
+    if (ours(target) && slot < 3 && (s = gran_state()) != 0) {
+        struct ext *x = &s->ext[pad_index(pad)][target == T_DENSITY][slot];
+        x->source = source;
+        x->amount = amount;
+    }
+    fw_attach(pad, source, target, slot, amount);
+}
+
+/* Replaces bl FUN_08076080 @0x08059e28, in the pad's reset (cmd 0x40), which hands it pad +0x2f4. */
+void gran_reset(uint8_t *obj)
+{
+    struct gran_state *s = gran_state();
+    if (s) {
+        struct ext *x = &s->ext[pad_index(obj - 0x2f4)][0][0];
+        for (int k = 0; k < 6; k++)
+            x[k].source = 0;
+    }
+    fw_reset_obj(obj);
 }

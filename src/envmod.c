@@ -35,6 +35,7 @@ typedef void (*attach_fn)(float amount, void *param, void *source, int slot);
 #define SRC_LFO2     5            /* lfo.c: LFO 2 and 3, one per pad; the preset format's "lfo2" / "lfo3" */
 #define SRC_LFO3     6
 void *lfo_source(const uint8_t *pad, int k);
+int gran_listed(unsigned target, unsigned source);   /* gran.c: a MIDI slot on Grain Size / Density stays listed */
 #define SRC_VELOCITY 0xd
 #define PAD_LIST     0x4ec
 #define PAD_COUNT    0x54c
@@ -58,7 +59,7 @@ static const struct {
 void env_mod_setup(uint8_t *pad, uint8_t *cmd)
 {
     uint16_t *source = (uint16_t *)(cmd + 0x14), ours = *source;
-    if (ours != SRC_ENV && ours != SRC_LFO2 && ours != SRC_LFO3) {
+    if (ours != SRC_ENV && ours != SRC_LFO2 && ours != SRC_LFO3 && !gran_listed((uint16_t)*(uint32_t *)(cmd + 0xc), ours)) {
         fw_setup(pad, cmd);
         return;
     }

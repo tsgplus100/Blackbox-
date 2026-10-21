@@ -10,13 +10,14 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JB1 GRAN (granular modulation)
+## This fork: JBGRAN 2 (granular modulation)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation. TOOLS shows `JB1 GRAN`. Everything in JOEBOX 1 is
+A fork of JOEBOX 1 that opens up Granular pads to modulation. TOOLS shows `JBGRAN 2`. Everything in JOEBOX 1 is
 still there.
 
-- **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Sources: VEL,
-  KEY, LFO, LFO2, LFO3, ENV (MIDI and the duck shapes do nothing on these two). 100 % is the knob's whole range.
+- **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
+  works: VEL, KEY, LFO, LFO2, LFO3, ENV, the MIDI ones (PTCH, MODW, MVOL, MPAN, CC) and the duck shapes (EXP1, EXP2,
+  PUMP, LINR). 100 % is the knob's whole range.
   Grain Size is read as each grain starts, so every grain keeps the size it was born with. Density moves once per
   engine block (5.3 ms) the same way turning its knob does; per-note sources come from the pad's first playing voice.
 - **LFO 2 and LFO 3 on Granular pads.** The engine already took them; now their knobs are on the pad's pages:
@@ -24,9 +25,9 @@ still there.
   the Gran tab (eight knobs a page is all the screen has). LFO 3 keeps its default Trig (Retrig) and both Offsets
   stay at 0 on these pads.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jb1-gran.json`
-gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. Untested on hardware so far: keep your stock file (and
-JOEBOX 1's two files) to go back. Code: `src/gran.c`, `patches/gran.py`, `test_gran.py`.
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-2.json`
+gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. The first build (JB1 GRAN, VEL..ENV only) ran on a
+unit; the MIDI, CC and duck sources are new in JBGRAN 2. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `patches/gran.py`, `test_gran.py`.
 
 ## What it adds (JOEBOX 1)
 

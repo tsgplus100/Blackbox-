@@ -1,14 +1,15 @@
 """Granular pads: Grain Size and Density as modulation destinations, LFO 2 / 3 knobs on their pages (src/gran.c).
 
-Real code runs for the wrappers and the slot sums. Stubbed: the grain start (FUN_08057ab0), the pad's block
-(FUN_080596b0) and the density update (FUN_08059158), each recording what it was handed.
+Real code runs for the wrappers, the slot sums and the pad's slot setup (FUN_08056810, through env_mod_setup).
+Stubbed: the grain start (FUN_08057ab0), the pad's block (FUN_080596b0), the density update (FUN_08059158), the pad's
+engine-wide attach (FUN_0805511c) and the reset helper (FUN_08076080), each recording what it was handed.
 NOT checked: that the MOD page opens on Grain Size and Density, that the knobs show on the LFO and Gran pages, preset
 save / load of those routings, how the modulation sounds.
 """
 import struct
 import sys
 
-from unicorn.arm_const import UC_ARM_REG_SP
+from unicorn.arm_const import UC_ARM_REG_S0, UC_ARM_REG_SP
 
 from emu import BASE, STACK, Emu
 
@@ -65,6 +66,9 @@ for at in (0x08057FBA, 0x08058B8A, 0x0805961E, 0x08059692):
     check(f"grain start @{at:#x} goes through gran_grain_start", bl_target(at) == e.sym["gran_grain_start"] and
           struct.unpack("<HH", stock[at - BASE:at - BASE + 4]) != struct.unpack("<HH", img[at - BASE:at - BASE + 4]))
 check("the class A pad's block goes through gran_pad_process", bl_target(0x0805BB5A) == e.sym["gran_pad_process"])
+check("the class A pad's vtable +0x40 (engine-wide sources) is gran_attach, the pad reset's helper call is gran_reset",
+      struct.unpack("<I", img[0x080D0708 - BASE:0x080D070C - BASE])[0] == e.sym["gran_attach"] | 1
+      and struct.unpack("<I", stock[0x080D0708 - BASE:0x080D070C - BASE])[0] == 0x0805511D and bl_target(0x08059E28) == e.sym["gran_reset"])
 check(f"the image still fits bank 1: {len(img)} of {0x08100000 - BASE} bytes", len(img) <= 0x08100000 - BASE)
 
 # ---- memory: the boot-time block, as master.c leaves it
@@ -194,6 +198,77 @@ check("no voice playing: VEL counts 0, back to 0.7", block() == [(0.7, NOW)], de
 e.uc.mem_write(PAD + 0x589, b"\x00")
 wf(DENS, 0.1)
 check("not a granular pad: only the stock block", block() == [] and blocks == [(PAD, CTX)])
+
+# ---- MIDI sources: PTCH / MODW / MVOL / MPAN kept in the pad's list for our targets (env_mod_setup)
+CMD = 0x24035000
+e.uc.mem_write(0x38800F70, struct.pack("<II", BLOCKMEM, BLOCKMEM ^ 0x5052534D))
+
+
+def slot_cmd(target, slot, source, amount):
+    e.uc.mem_write(CMD, struct.pack("<BBHIIIIHh", 0x3A, 0, 0, 0, 0, target, slot, source, amount))
+    e.call("env_mod_setup", PAD, CMD)
+
+
+def listed():
+    return [(round(rf(PAD + 0x4EC + 12 * i), 3), e.r16(PAD + 0x4F0 + 12 * i), e.r16(PAD + 0x4F2 + 12 * i)) for i in range(e.r32(PAD + 0x54C))]
+
+
+fresh()
+slot_cmd(0x17C, 0, 0x1A, 500)
+slot_cmd(0x180, 1, 0x19, -250)
+slot_cmd(0x11, 0, 0x1A, 500)
+check("MODW on Grain Size and PTCH on Density stay in the pad's list; MODW on Cutoff goes stock's way (not listed)",
+      listed() == [(0.5, 0x17C, 0x1A), (-0.25, 0x180, 0x19)], listed())
+wf(PAD + 0x128, 1.0)                           # mod wheel all the way up
+check("MODW 1.0 at +50 %: +0.5 of the range -> 47880", start() == 47880, start())
+for code, obj in ((0x19, 0x13C), (0x1C, 0x12C), (0x1D, 0x134)):
+    fresh()
+    slot_cmd(0x17C, 0, code, 500)
+    wf(PAD + obj + 4, 1.0)
+    check(f"source {code:#x} reads pad +{obj + 4:#x}", start() == 47880, (start(), listed()))
+fresh()
+slot_cmd(0x17C, 0, 0x1A, 500)
+slot_cmd(0x17C, 0, 0, 0)
+check("setting the slot back to none takes it out of the list", listed() == [], listed())
+
+# ---- CC and engine-wide sources: through the pad's vtable +0x40
+attached = []
+e.stub(0x0805511C, lambda: attached.append((e.arg(0), e.arg(1), e.arg(2), e.arg(3), round(struct.unpack("<f", struct.pack("<I", e.uc.reg_read(UC_ARM_REG_S0) & 0xFFFFFFFF))[0], 3))))
+CC = 0x24036000
+
+
+def attach(source, target, slot, amount):
+    attached.clear()
+    e.uc.reg_write(UC_ARM_REG_S0, struct.unpack("<I", struct.pack("<f", amount))[0])
+    e.call("gran_attach", PAD, source, target, slot)
+    return list(attached)
+
+
+fresh()
+e.uc.mem_write(CC, bytes(16))
+wf(CC + 4, 1.0)
+check("a CC on Grain Size, slot 1: kept, and stock's attach still runs with everything it was given",
+      attach(CC, 0x17C, 1, 0.5) == [(PAD, CC, 0x17C, 1, 0.5)], attached)
+check("...the grain is 0.5 of the range bigger", start() == 47880, start())
+wf(CC + 4, 0.0)
+check("...and back when the CC is 0", start() == 24360, start())
+wf(CC + 4, 1.0)
+check("a CC on Cutoff goes to stock only", attach(CC, 0x11, 0, 0.5) == [(PAD, CC, 0x11, 0, 0.5)] and start() == 47880)
+attach(0, 0x17C, 1, 0.0)
+check("the CC taken off (source 0): no change any more", start() == 24360, start())
+attach(CC, 0x180, 2, -0.5)
+wf(DENS, 0.6)
+check("a CC on Density at -50 %: 0.6 -> 0.1", block() == [(0.1, NOW)], dens)
+attach(CC, 0x17C, 0, 0.25)
+resets = []
+e.stub(0x08076080, lambda: resets.append(e.arg(0)))
+e.call("gran_reset", PAD + 0x2F4)
+check("the pad's reset hands its helper the same object and empties the pad's CC slots", resets == [PAD + 0x2F4] and start() == 24360, (resets, start()))
+check("...so Density goes back to the knob's 0.6", block() == [(0.6, NOW)], dens)
+fresh(0x0302)                                  # another pad (row 3, col 2) keeps its own
+attach(CC, 0x17C, 0, 0.5)
+fresh(0x0201)
+check("CC slots are per pad", start() == 24360, start())
 
 # ---- no memory block
 e.uc.mem_write(0x38800F70, bytes(8))
