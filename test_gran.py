@@ -50,12 +50,18 @@ def rf(a):
 
 # ---- the image
 T = e.sym["gran_mod_targets"]
-check("MOD page list: stock's 28 and then Grain Size (0x17c) and Density (0x180)",
-      words(img, T, 30) == words(stock, 0x080F12BC, 28) + [0x17C, 0x180], words(img, T, 30))
-check("...both users of the list point at it, the loop runs to its end and both counts say 30",
+check("MOD page list: stock's 28 and then Grain Size (0x17c), Density (0x180), LFO 2 / 3 Depth (0x1c8, 0x1c9)",
+      words(img, T, 32) == words(stock, 0x080F12BC, 28) + [0x17C, 0x180, 0x1C8, 0x1C9], words(img, T, 32))
+check("...both users of the list point at it, the loop runs to its end and both counts say 32",
       struct.unpack("<II", img[0x080B8924 - BASE:0x080B8928 - BASE] + img[0x080B8BF8 - BASE:0x080B8BFC - BASE]) == (T, T)
-      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f13c01")
-      and img[0x080B896A - BASE] == 30 and img[0x080B8980 - BASE] == 30)
+      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14001")
+      and img[0x080B896A - BASE] == 32 and img[0x080B8980 - BASE] == 32)
+for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Clip", 0x080EF9D8, 5), ("Slicer", 0x080EF870, 5),
+                         ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5),
+                         ("Granular Pos", 0x080EF558, 6), ("second-copy Granular Pos", 0x080EEFB8, 2)):
+    got = words(img, page, have + 3)
+    check(f"{name} page: its own {have} knobs, then 2 Depth and 3 Depth, then the end",
+          got[:have] == words(stock, page, have) and words(stock, page, have + 3)[have:] == [0, 0, 0] and got[have:] == [0x1C8, 0x1C9, 0], got)
 for name, pages, have, add in (("LFO", (0x080EF5A0, 0x080EF000), 5, [0x1A9, 0x1AA, 0x1AB]),
                                ("Gran", (0x080EF5E8, 0x080EF048), 6, [0x1AD, 0x1AE])):
     for copy, base in zip(("", " (second copy)"), pages):
@@ -69,6 +75,9 @@ check("the class A pad's block goes through gran_pad_process", bl_target(0x0805B
 check("the class A pad's vtable +0x40 (engine-wide sources) is gran_attach, the pad reset's helper call is gran_reset",
       struct.unpack("<I", img[0x080D0708 - BASE:0x080D070C - BASE])[0] == e.sym["gran_attach"] | 1
       and struct.unpack("<I", stock[0x080D0708 - BASE:0x080D070C - BASE])[0] == 0x0805511D and bl_target(0x08059E28) == e.sym["gran_reset"])
+check("...and the class B pad's: gran_attach_b, gran_reset_b",
+      struct.unpack("<I", img[0x080D08D0 - BASE:0x080D08D4 - BASE])[0] == e.sym["gran_attach_b"] | 1
+      and struct.unpack("<I", stock[0x080D08D0 - BASE:0x080D08D4 - BASE])[0] == 0x08063DF1 and bl_target(0x08068556) == e.sym["gran_reset_b"])
 check(f"the image still fits bank 1: {len(img)} of {0x08100000 - BASE} bytes", len(img) <= 0x08100000 - BASE)
 
 # ---- memory: the boot-time block, as master.c leaves it
@@ -79,7 +88,7 @@ BLOCKMEM, LFOS = 0xC0000000, 0xC0000000 + 0x56800
 GRAN = LFOS + 0x800
 e.w32(0x38800F70, BLOCKMEM)
 e.w32(0x38800F74, BLOCKMEM ^ 0x5052534D)
-e.w32(LFOS, 0x4C464F32)                       # lfo.c's state, started
+e.w32(LFOS, 0x4C464F33)                       # lfo.c's state, started
 
 
 def lfo_value(q, k, v):
@@ -93,6 +102,7 @@ SIZE, DENS = PAD + 0x590, PAD + 0x5A0
 def fresh(pad_id=0x0201):
     for a in (PAD, VOICE, VOICE2):
         e.uc.mem_write(a, bytes(0x800))
+    e.w32(PAD, 0x080D06C8)                     # a class A pad's vtable
     e.w32(PAD + 0x18, pad_id)
     e.uc.mem_write(PAD + 0x589, b"\x01")
 
@@ -269,6 +279,58 @@ fresh(0x0302)                                  # another pad (row 3, col 2) keep
 attach(CC, 0x17C, 0, 0.5)
 fresh(0x0201)
 check("CC slots are per pad", start() == 24360, start())
+
+# ---- LFO 2 / 3 Depth: slot-list part from the class A pad's block, CC part per pad, both through gran_depth
+DEPTH = GRAN + 136 + 16 * 4 * 3 * 8
+
+
+def gran_depth(q, k):
+    e.call("gran_depth", q, k)
+    return round(struct.unpack("<f", struct.pack("<I", e.uc.reg_read(UC_ARM_REG_S0) & 0xFFFFFFFF))[0], 4)
+
+
+fresh()
+e.uc.mem_write(PAD + 0x589, b"\x00")           # a Sample pad: Depth is for every class A pad
+slots((0.5, 0x1C8, 0xD), (-0.25, 0x1C9, 5))
+e.w32(PAD + 0x6C, 1)
+e.w32(PAD + 0x2C, VOICE)
+e.uc.mem_write(VOICE, b"\x01")
+wf(VOICE + 0x88, 1.0)
+lfo_value(9, 0, 1.0)
+block()
+check("a Sample pad's block works out VEL 1 x 50 % on LFO 2 Depth and LFO2 1 x -25 % on LFO 3 Depth",
+      (gran_depth(9, 0), gran_depth(9, 1)) == (0.5, -0.25) and blocks == [(PAD, CTX)], (rf(DEPTH + 72), rf(DEPTH + 76)))
+check("...each is used once (the next block works it out again)", (gran_depth(9, 0), gran_depth(9, 1)) == (0.0, 0.0))
+slots()
+block()
+check("no slot on either Depth: nothing", gran_depth(9, 0) == 0.0)
+attach(CC, 0x1C9, 2, 0.5)
+wf(CC + 4, 0.5)
+check("a CC on LFO 3 Depth counts on every look, not once", (gran_depth(9, 1), gran_depth(9, 1)) == (0.25, 0.25))
+check("an out-of-range pad index reads nothing", gran_depth(16, 0) == 0.0)
+e.call("gran_reset", PAD + 0x2F4)
+check("the pad's reset empties it", gran_depth(9, 1) == 0.0)
+slot_cmd(0x1C8, 0, 0x1A, 1000)
+check("MODW on LFO 2 Depth stays in the pad's list", listed() == [(1.0, 0x1C8, 0x1A)], listed())
+
+# ---- class B pads (Clip, Slicer): CC and engine-wide sources only, through their own vtable +0x40 and reset
+PADB = 0x24037000
+e.uc.mem_write(PADB, bytes(0x900))
+e.w32(PADB, 0x080D0890)                        # a class B pad's vtable
+e.w32(PADB + 0x18, 0x0003)                     # pad 4
+battached = []
+e.stub(0x08063DF0, lambda: battached.append((e.arg(0), e.arg(1), e.arg(2), e.arg(3))))
+e.uc.reg_write(UC_ARM_REG_S0, struct.unpack("<I", struct.pack("<f", -1.0))[0])
+e.call("gran_attach_b", PADB, CC, 0x1C8, 0)
+check("class B: a CC on LFO 2 Depth is kept and stock's attach still runs", battached == [(PADB, CC, 0x1C8, 0)] and gran_depth(3, 0) == -0.5, battached)
+e.uc.reg_write(UC_ARM_REG_S0, 0)
+e.call("gran_attach_b", PADB, CC, 0x11, 0)
+check("class B: a CC on Cutoff goes to stock only", battached[-1] == (PADB, CC, 0x11, 0) and gran_depth(3, 0) == -0.5)
+resets.clear()
+e.call("gran_reset_b", PADB + 0x26C + 0x410 + 0x1D4)   # the second layer's call first: not a pad, left alone
+check("class B reset, second layer's call: not 0x440 into a pad, nothing emptied", gran_depth(3, 0) == -0.5 and resets == [PADB + 0x850])
+e.call("gran_reset_b", PADB + 0x26C + 0x1D4)
+check("class B reset, first layer's call: the pad's CC slots emptied", gran_depth(3, 0) == 0.0 and resets[-1] == PADB + 0x440)
 
 # ---- no memory block
 e.uc.mem_write(0x38800F70, bytes(8))

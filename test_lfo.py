@@ -61,17 +61,18 @@ RATES = ["32 bar", "16 bar", "8 bar", "4 bar", "2 bar", "1 bar", "1/2", "1/2T", 
 check("registered per LFO: Wave (12), Rate (15 synced lengths), Trig (Free, Retrig, Once); ids 0x1a9.. and 0x1ad..",
       [(l[0], l[1], l[2]) for l in lists] == [(0x1A9, "2 Wave:", WAVES), (0x1AA, "2 Rate:", RATES), (0x1AB, "2 Trig:", ["Free", "Retrig", "Once"]),
                                               (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"])], lists)
-check("...and Offset 0..100 %", [(n[0], n[1], n[2], n[3]) for n in nums] == [(0x1AC, "2 Offset:", 0, 1000), (0x1B0, "3 Offset:", 0, 1000)], nums)
+check("...and Offset and Depth 0..100 % (Depth: 0x1c8 / 0x1c9)", [(n[0], n[1], n[2], n[3]) for n in nums] ==
+      [(0x1AC, "2 Offset:", 0, 1000), (0x1C8, "2 Depth:", 0, 1000), (0x1B0, "3 Offset:", 0, 1000), (0x1C9, "3 Depth:", 0, 1000)], nums)
 check(f"the whole image fits flash bank 1: {len(img)} bytes of at most {0x08100000 - BASE} (the installer refuses a longer one)", len(img) <= 0x08100000 - BASE, len(img))
-check("eight distinct xml names", len({l[3] for l in lists} | {n[4] for n in nums}) == 8)
+check("ten distinct xml names", len({l[3] for l in lists} | {n[4] for n in nums}) == 10)
 e.stub(0x08093EF6, lambda: added.append((e.arg(1), e.arg(2))))
 e.call("lfo_defaults", 0x24073000, 0xDC, 0)
 check("pad defaults: stock's last entry, then LFO 2 = Sine, 1 bar, Free; LFO 3 = Random, 1/4, Retrig",
       added[:9] == [(0xDC, 0), (0x1A9, 4), (0x1AA, 5), (0x1AB, 0), (0x1AC, 0), (0x1AD, 8), (0x1AE, 8), (0x1AF, 1), (0x1B0, 0)], added)
-check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off",
+check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %",
       added[9:] == [(0x1B6, 0), (0x1B7, 0), (0x1B8, 0), (0x1B9, 330), (0x1BA, 750), (0x1BB, 500), (0x1BC, 350), (0x1BD, 250), (0x1BE, 500),
-                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0)], added[9:])
-check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 82): both places that size one",
+                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000)], added[9:])
+check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 84): both places that size one",
       img[0x08093F26 - BASE:0x08093F28 - BASE] == bytes.fromhex("6021") and img[0x080949F0 - BASE:0x080949F2 - BASE] == bytes.fromhex("6021"))
 check("page 3 of the Sample and Multisample pad pages lists the eight knobs",
       words(img, 0x080EFCF0, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] and words(img, 0x080EFB88, 9, "H") == list(range(0x1A9, 0x1B1)) + [0])
@@ -169,18 +170,19 @@ e.w32(0x38800F74, BLOCKMEM ^ 0x5052534D)
 L = lambda pad, k: LFOS + 0x18 + (pad * 2 + k) * 28          # struct lfo is 28 bytes; state header 24
 e.call("env_mod_attach", PAD2, VOICE)
 check("with memory: the voice's parameter 0x5c reads pad 10's LFO 2 (state + header + 9 * 2 lfos)", has_source(VOICE + 0x288, L(9, 0)), [hex(e.r32(VOICE + 0x288 + 4 * k) & 0xFFFFFFFF) for k in range(13)])
-check("...the state is started (magic LFO2) and pad 10's LFO 2 and LFO 3 are marked in use", e.r32(LFOS) == 0x4C464F32 and e.r32(LFOS + 8) == 3 << 18, hex(e.r32(LFOS + 8)))
+check("...the state is started (magic LFO3) and pad 10's LFO 2 and LFO 3 are marked in use", e.r32(LFOS) == 0x4C464F33 and e.r32(LFOS + 8) == 3 << 18, hex(e.r32(LFOS + 8)))
 
 
 def pad_settings(pad, **kw):
-    ids = {"wave2": 0x1A9, "rate2": 0x1AA, "trig2": 0x1AB, "off2": 0x1AC, "wave3": 0x1AD, "rate3": 0x1AE, "trig3": 0x1AF, "off3": 0x1B0}
+    ids = {"wave2": 0x1A9, "rate2": 0x1AA, "trig2": 0x1AB, "off2": 0x1AC, "wave3": 0x1AD, "rate3": 0x1AE, "trig3": 0x1AF, "off3": 0x1B0,
+           "depth2": 0x1C8, "depth3": 0x1C9}      # no Depth unless given: a store from before it existed
     vals = dict(wave2=4, rate2=8, trig2=0, off2=0, wave3=8, rate3=8, trig3=1, off3=0)
     vals.update(kw)
     arr = ARR + 0x100 + pad * 0x80
     e.uc.mem_write(arr, b"".join(struct.pack("<HHI", ids[k], 0, v) for k, v in vals.items()))
     store = APP_PADS + (pad >> 2) * 0xF0 + (pad & 3) * 0x30
     e.w32(store + 4, arr)
-    e.uc.mem_write(store + 10, struct.pack("<H", 8))
+    e.uc.mem_write(store + 10, struct.pack("<H", len(vals)))
 
 
 now = [10_000_000]
@@ -360,6 +362,43 @@ check(f"class B, LFO3 on Pitch counts double, as stock's LFO does there ({read_p
 slot_b(0xA2, 1, 5, 500)
 check("class B: a target these pads cannot modulate is left alone", not stock_b)
 check("the class B setup call is hooked", img[0x080685C4 - BASE:0x080685C8 - BASE] != stock[0x080685C4 - BASE:0x080685C8 - BASE])
+
+# ---- Depth (3.1 JBGRAN 3)
+def quarter(**kw):
+    """Sine at 1/4 for pad 10's LFO 2, read at its first quarter point (+1 at full depth)."""
+    restart(wave2=4, rate2=8, trig2=0, **kw)
+    e.w32(L(9, 0) + 8, 0)
+    tick(1)
+    tick(250, 24)
+    return val(9, 0)
+
+
+check(f"no Depth in the pad's store (a preset from before it): full depth ({quarter():+.2f})", abs(quarter() - 1) < 0.02)
+check(f"Depth 50 %: half the swing ({quarter(depth2=500):+.2f})", abs(quarter(depth2=500) - 0.5) < 0.02)
+check(f"Depth 0: nothing comes out ({quarter(depth2=0):+.2f})", quarter(depth2=0) == 0.0)
+PADA = 0x24078000
+e.uc.mem_write(PADA, bytes(0x100))
+e.w32(PADA + 0x18, 0x0201)                    # pad 10
+CCOBJ = 0x24079000
+e.uc.mem_write(CCOBJ, struct.pack("<If", 0, 1.0))
+e.stub(0x0805511C)
+
+
+def cc_on_depth(amount, target=0x1C8, slot=0, source=CCOBJ):
+    e.uc.reg_write(UC_ARM_REG_S0, struct.unpack("<I", struct.pack("<f", amount))[0])
+    e.call("gran_attach", PADA, source, target, slot)
+
+
+cc_on_depth(-0.5)
+check(f"a CC (at 127) on LFO 2 Depth, -50 %, knob 100 %: half the swing ({quarter(depth2=1000):+.2f})", abs(quarter(depth2=1000) - 0.5) < 0.02)
+e.uc.mem_write(CCOBJ + 4, struct.pack("<f", 0.0))
+check(f"...the CC at 0: full again ({quarter(depth2=1000):+.2f})", abs(quarter(depth2=1000) - 1) < 0.02)
+cc_on_depth(1.0)
+e.uc.mem_write(CCOBJ + 4, struct.pack("<f", 0.5))
+check(f"knob 0 % and the CC (half way) at +100 %: the CC sets the depth ({quarter(depth2=0):+.2f})", abs(quarter(depth2=0) - 0.5) < 0.02)
+e.uc.mem_write(CCOBJ + 4, struct.pack("<f", 1.0))
+check(f"knob 100 % and more on top: held at full ({quarter(depth2=1000):+.2f})", abs(quarter(depth2=1000) - 1) < 0.02)
+cc_on_depth(0.0, source=0)
 
 cnt = [0]
 from unicorn import UC_HOOK_CODE

@@ -10,10 +10,10 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JBGRAN 2 (granular modulation)
+## This fork: JBGRAN 3 (granular modulation, LFO Depth)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation. TOOLS shows `JBGRAN 2`. Everything in JOEBOX 1 is
-still there.
+A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 3`.
+Everything in JOEBOX 1 is still there.
 
 - **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
   works: VEL, KEY, LFO, LFO2, LFO3, ENV, the MIDI ones (PTCH, MODW, MVOL, MPAN, CC) and the duck shapes (EXP1, EXP2,
@@ -24,10 +24,15 @@ still there.
   `2 Wave`, `2 Rate`, `2 Trig` after the stock LFO's on the LFO tab, `3 Wave`, `3 Rate` after the grain knobs on
   the Gran tab (eight knobs a page is all the screen has). LFO 3 keeps its default Trig (Retrig) and both Offsets
   stay at 0 on these pads.
+- **LFO 2 / 3 Depth** (`2 Depth`, `3 Depth`, 0..100 %, default 100 % = as before): on the LFO tab after the stock
+  LFO's knobs; on Granular pads, on the Pos tab. Both are modulation destinations too, so a CC can ride an LFO's
+  depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
+  duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-2.json`
-gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. The first build (JB1 GRAN, VEL..ENV only) ran on a
-unit; the MIDI, CC and duck sources are new in JBGRAN 2. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `patches/gran.py`, `test_gran.py`.
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-3.json`
+gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN ran on a unit; the MIDI, CC and duck
+sources (JBGRAN 2) and Depth (JBGRAN 3) have not been on hardware yet. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
+`patches/gran.py`, `test_gran.py`, `test_lfo.py`.
 
 ## What it adds (JOEBOX 1)
 

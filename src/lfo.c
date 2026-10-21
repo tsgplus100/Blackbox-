@@ -8,6 +8,8 @@
  *   Rate    always tempo-synced: 32 bars .. 1/32
  *   Trig    Free (runs on), Retrig (restarts with every note), Once (restarts, runs one cycle, holds its end)
  *   Offset  where in the cycle it starts (0..100 % = 0..360 degrees)
+ *   Depth   how much of it comes out, 0..100 % (0x1c8 / 0x1c9, 3.1 JBGRAN 3; 100 % = as before). A modulation
+ *           destination too (gran.c): the slots add to the knob, clamped to 0..100 %.
  *
  * One LFO per pad, not per note (stock's is per note). Values are worked out once per engine block (5.33 ms) in
  * duck_block's tick, for the pads that have one of them routed; routing is the ENV mechanism (envmod.c).
@@ -42,6 +44,7 @@ typedef void (*label_fn)(void *widget, const char *text);
 
 #define TYPE_PCT 8
 #define P_LFO     0x1a9          /* + 4 * (lfo - 2): Wave, Rate, Trig, Offset; 0x1a9..0x1b0 (0x1b5 is stock's) */
+#define P_DEPTH   0x1c8          /* + (lfo - 2): Depth */
 #define APP_PADS  (0x24020088u + 0x1840u)                /* app pad stores: + row * 0xf0 + col * 0x30 */
 
 enum { W_SAW, W_REVSAW, W_TRI, W_TRIP, W_SINE, W_SINEP, W_SQUARE, W_SQRP, W_RANDOM, W_EXPDN, W_EXPUP, W_DRIFT, WAVES };
@@ -68,6 +71,7 @@ void lfo_register(void *table)
         fw_register_list(table, P_LFO + 4 * k + 1, label[k][1], rate_names, RATES, xml[k][1]);
         fw_register_list(table, P_LFO + 4 * k + 2, label[k][2], trig_names, 3, xml[k][2]);
         fw_register_num(table, P_LFO + 4 * k + 3, TYPE_PCT, label[k][3], 0, 1000, xml[k][3]);
+        fw_register_num(table, P_DEPTH + k, TYPE_PCT, k ? "3 Depth:" : "2 Depth:", 0, 1000, k ? "lfo3depth" : "lfo2depth");
     }
 }
 
@@ -80,6 +84,8 @@ void lfo_defaults(void *store, int param, int value)
     for (int i = 0; i < 8; i++)
         fw_store_add(store, P_LFO + i, first[i]);
     insert_defaults(store);
+    fw_store_add(store, P_DEPTH, 1000);
+    fw_store_add(store, P_DEPTH + 1, 1000);
 }
 
 /* ---- the tab ---- */
@@ -110,12 +116,14 @@ struct lfo_state {
     uint32_t active;             /* bit pad * 2 + k: something is routed from it */
     uint32_t rng, scan, last;
     struct lfo l[16][2];
+    float depth[16][2];          /* the Depth knobs, 0..1 */
 };
-#define LFO_MAGIC 0x4c464f32u    /* "LFO2" */
+#define LFO_MAGIC 0x4c464f33u    /* "LFO3": the Depths joined the state (3.1 JBGRAN 3) */
 _Static_assert(sizeof(struct lfo_state) <= 0x800, "gran.c keeps its state in the second half of the LFOs' 0x1000 bytes");
 #define DUCK_TRIGS (*(volatile uint16_t *)(0x2405ff70u + 14))   /* duck_state's spare bytes: a bit per pad, set at voice start */
 
 uint8_t *master_block(void);     /* master.c: the boot-time SDRAM block, or 0 */
+float gran_depth(unsigned pad, int k);   /* gran.c: what the modulation slots add to a Depth knob */
 #define LFO_OFFSET 0x56800u      /* behind Prism's */
 
 static struct lfo_state *lfo_state(void)
@@ -129,6 +137,8 @@ static struct lfo_state *lfo_state(void)
             ((volatile uint32_t *)s)[i] = 0;
         s->rng = 0x1f0c0de5u;
         s->bpm = 120.0f;
+        for (unsigned i = 0; i < 32; i++)
+            s->depth[i >> 1][i & 1] = 1.0f;
         s->magic = LFO_MAGIC;
     }
     return s;
@@ -172,6 +182,18 @@ static float shape(const struct lfo *l, uint32_t phase)
     case W_DRIFT:  return l->from + (l->to - l->from) * x * x * (3.0f - 2.0f * x);
     default:       return 0.0f;
     }
+}
+
+/* fw_setting, but `missing` for a setting the store does not have (a preset from before it existed): stock's own
+   lookup (FUN_08093e9c) answers 0 there, which for Depth would silence the LFO. Store: count +10, entries at +4. */
+static unsigned setting_or(const void *store, unsigned param, unsigned missing)
+{
+    const uint8_t *st = (const uint8_t *)store;
+    const uint8_t *e = *(const uint8_t *const *)(st + 4);
+    for (unsigned i = 0, n = *(const uint16_t *)(st + 10); i < n; i++, e += 8)
+        if (*(const uint16_t *)e == param)
+            return *(const uint32_t *)(e + 4);
+    return missing;
 }
 
 /* comp.c tells us the tempo every block (the master stage is where it is readable). */
@@ -218,6 +240,8 @@ void lfo_tick(uint32_t now)
         l->rate = (uint8_t)(rate < RATES ? rate : 5);
         l->trig = (uint8_t)(trig < 3 ? trig : T_FREE);
         l->offset = (off > 1000 ? 1000u : off) * 4294967u;   /* 1000 -> just under a full turn */
+        unsigned depth = setting_or(store, P_DEPTH + k, 1000);
+        s->depth[q][k] = (float)(depth > 1000 ? 1000u : depth) * 0.001f;
     }
     float per_frame = s->bpm * (4294967296.0f / (60.0f * 48000.0f));   /* phase per frame for a one-beat cycle */
     for (unsigned p = 0; p < 16; p++) {
@@ -243,7 +267,9 @@ void lfo_tick(uint32_t now)
                     }
                 }
             }
-            l->value = shape(l, l->phase + l->offset);       /* Once, finished: the phase stays at the cycle's last point */
+            float d = s->depth[p][k] + gran_depth(p, k);
+            d = d < 0.0f ? 0.0f : d > 1.0f ? 1.0f : d;
+            l->value = shape(l, l->phase + l->offset) * d;   /* Once, finished: the phase stays at the cycle's last point */
         }
     }
 }
