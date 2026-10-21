@@ -1,7 +1,7 @@
 import os
 os.environ.setdefault("JAVA_HOME", "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home")
 import pyghidra
-pyghidra.start(install_dir="/opt/homebrew/Cellar/ghidra/12.1.4/libexec")
+pyghidra.start(install_dir=os.environ.get("GHIDRA_INSTALL_DIR", "/opt/homebrew/Cellar/ghidra/12.1.4/libexec"))
 from ghidra.base.project import GhidraProject
 R=os.path.dirname(os.path.abspath(__file__))
 p=GhidraProject.openProject(R,"BLACKBOX-3.1.9",False); prog=p.openProgram("/","BLACKBOX-3.1.9",False)

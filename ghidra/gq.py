@@ -17,7 +17,7 @@ import sys
 os.environ.setdefault("JAVA_HOME", "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home")
 import pyghidra
 
-pyghidra.start(install_dir="/opt/homebrew/Cellar/ghidra/12.1.4/libexec")
+pyghidra.start(install_dir=os.environ.get("GHIDRA_INSTALL_DIR", "/opt/homebrew/Cellar/ghidra/12.1.4/libexec"))
 
 from ghidra.base.project import GhidraProject
 from ghidra.app.decompiler import DecompInterface

@@ -4,7 +4,7 @@ import sys
 
 import pyghidra
 
-GHIDRA = "/opt/homebrew/Cellar/ghidra/12.1.4/libexec"
+GHIDRA = os.environ.get("GHIDRA_INSTALL_DIR", "/opt/homebrew/Cellar/ghidra/12.1.4/libexec")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FW = os.path.join(ROOT, "firmware", sys.argv[1] if len(sys.argv) > 1 else "BLACKBOX-3.1.9.bin")
 BASE = 0x08040000
