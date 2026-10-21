@@ -80,9 +80,9 @@ check("...and so does page 3 of the Clip and Slicer pad pages", words(img, 0x080
 check("the second copy of the pad pages (cells of class type 0x4c) has them too, and its defaults are hooked",
       all(words(img, b + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] for b in (0x080EF3A8, 0x080EF240, 0x080EF0D8))
       and img[0x080943B4 - BASE:0x080943B8 - BASE] != stock[0x080943B4 - BASE:0x080943B8 - BASE] and img[0x0809423C - BASE:0x08094240 - BASE] != stock[0x0809423C - BASE:0x08094240 - BASE])
-check("Granular pads' page 3 is still their own six grain knobs (gran.c adds LFO 3 Wave / Rate behind them)",
+check("Granular pads' page 3 is still their own six grain knobs (gran.c adds LFO 2 Trig / Offset behind them)",
       words(img, 0x080EF510 + 3 * 0x48, 6, "H") == words(stock, 0x080EF510 + 3 * 0x48, 6, "H") and words(stock, 0x080EF510 + 3 * 0x48, 7, "H")[5:] != [0, 0]
-      and words(img, 0x080EF510 + 3 * 0x48, 9, "H")[6:] == [0x1AD, 0x1AE, 0])
+      and words(img, 0x080EF510 + 3 * 0x48, 9, "H")[6:] == [0x1AB, 0x1AC, 0])
 
 # ---- the tab
 VIEW = 0x24048000

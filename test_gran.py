@@ -57,13 +57,12 @@ check("...both users of the list point at it, the loop runs to its end and both 
       and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14001")
       and img[0x080B896A - BASE] == 32 and img[0x080B8980 - BASE] == 32)
 for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Clip", 0x080EF9D8, 5), ("Slicer", 0x080EF870, 5),
-                         ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5),
-                         ("Granular Pos", 0x080EF558, 6), ("second-copy Granular Pos", 0x080EEFB8, 2)):
+                         ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5)):
     got = words(img, page, have + 3)
     check(f"{name} page: its own {have} knobs, then 2 Depth and 3 Depth, then the end",
           got[:have] == words(stock, page, have) and words(stock, page, have + 3)[have:] == [0, 0, 0] and got[have:] == [0x1C8, 0x1C9, 0], got)
-for name, pages, have, add in (("LFO", (0x080EF5A0, 0x080EF000), 5, [0x1A9, 0x1AA, 0x1AB]),
-                               ("Gran", (0x080EF5E8, 0x080EF048), 6, [0x1AD, 0x1AE])):
+for name, pages, have, add in (("LFO", (0x080EF5A0, 0x080EF000), 5, [0x1A9, 0x1AA, 0x1C8]),     # 2 Wave, 2 Rate, 2 Depth
+                               ("Gran", (0x080EF5E8, 0x080EF048), 6, [0x1AB, 0x1AC])):           # 2 Trig, 2 Offset
     for copy, base in zip(("", " (second copy)"), pages):
         got = words(img, base, 9)
         check(f"Granular {name} page{copy}: its own {have} knobs, then {', '.join(hex(x) for x in add)}, at most eight, ends in 0",
@@ -72,6 +71,9 @@ for at in (0x08057FBA, 0x08058B8A, 0x0805961E, 0x08059692):
     check(f"grain start @{at:#x} goes through gran_grain_start", bl_target(at) == e.sym["gran_grain_start"] and
           struct.unpack("<HH", stock[at - BASE:at - BASE + 4]) != struct.unpack("<HH", img[at - BASE:at - BASE + 4]))
 check("the class A pad's block goes through gran_pad_process", bl_target(0x0805BB5A) == e.sym["gran_pad_process"])
+check("Granular pads' Pos pages are stock's", all(words(img, a, 9) == words(stock, a, 9) for a in (0x080EF558, 0x080EEFB8)))
+check("no LFO 3 knob on any Granular page", not any(x in (0x1AD, 0x1AE, 0x1AF, 0x1B0, 0x1C9)
+                                                   for b in (0x080EF510, 0x080EEF70) for x in words(img, b, 5 * 0x24)))
 check("the class A pad's vtable +0x40 (engine-wide sources) is gran_attach, the pad reset's helper call is gran_reset",
       struct.unpack("<I", img[0x080D0708 - BASE:0x080D070C - BASE])[0] == e.sym["gran_attach"] | 1
       and struct.unpack("<I", stock[0x080D0708 - BASE:0x080D070C - BASE])[0] == 0x0805511D and bl_target(0x08059E28) == e.sym["gran_reset"])

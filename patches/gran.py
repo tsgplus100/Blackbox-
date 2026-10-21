@@ -35,14 +35,13 @@ PATCHES = [
     (0x080B8BF8, word(0x080F12BC), word(TARGETS)),
     (0x080B896A, bytes([N_STOCK, 0x22]), bytes([N_OURS, 0x22])),   # movs r2,#28 -> #30
     (0x080B8980, bytes([N_STOCK, 0x22]), bytes([N_OURS, 0x22])),
-    # Granular pad pages (both copies, see duck.py): LFO page gets LFO 2 Wave / Rate / Trig after the stock five,
-    # Gran page gets LFO 3 Wave / Rate after its six. Eight knobs a page is all the screen has.
-    *[(page + 10, ids(0, 0, 0), ids(0x1A9, 0x1AA, 0x1AB)) for page in (0x080EF5A0, 0x080EF000)],
-    *[(page + 12, ids(0, 0), ids(0x1AD, 0x1AE)) for page in (0x080EF5E8, 0x080EF048)],
+    # Granular pad pages (both copies, see duck.py): LFO 2 only, all five of its knobs. LFO page: Wave / Rate / Depth
+    # after the stock five; Gran page: Trig / Offset after its six. Eight knobs a page is all the screen has, so
+    # LFO 3 has no knobs on these pads (it runs on its defaults when a slot uses it).
+    *[(page + 10, ids(0, 0, 0), ids(0x1A9, 0x1AA, 0x1C8)) for page in (0x080EF5A0, 0x080EF000)],
+    *[(page + 12, ids(0, 0), ids(0x1AB, 0x1AC)) for page in (0x080EF5E8, 0x080EF048)],
     # LFO 2 / 3 Depth (0x1c8, 0x1c9): after the stock LFO's five on the LFO page of Sample, Multisample, Clip and
-    # Slicer pads (and the second copy's Sample, Clip, Slicer); Granular pads' LFO page is full, so their Pos page.
+    # Slicer pads (and the second copy's Sample, Clip, Slicer). Granular pads: 2 Depth is on their LFO page, above.
     *[(page + 10, ids(0, 0), ids(0x1C8, 0x1C9)) for page in
       (0x080EFCA8, 0x080EFB40, 0x080EF9D8, 0x080EF870, 0x080EF438, 0x080EF2D0, 0x080EF168)],
-    (0x080EF558 + 12, ids(0, 0), ids(0x1C8, 0x1C9)),
-    (0x080EEFB8 + 4, ids(0, 0), ids(0x1C8, 0x1C9)),
 ]

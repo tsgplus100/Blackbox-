@@ -14,7 +14,7 @@
  * One LFO per pad, not per note (stock's is per note). Values are worked out once per engine block (5.33 ms) in
  * duck_block's tick, for the pads that have one of them routed; routing is the ENV mechanism (envmod.c).
  * Sample, Multisample, Clip and Slicer pads (3.1.D added the last two: envmod.c's class B path). Granular pads too: the
- * engine path is the Sample pad's, and gran.c puts five of the knobs on their LFO and Gran pages (no LFO+ tab there).
+ * engine path is the Sample pad's, and gran.c puts LFO 2's five knobs on their LFO and Gran pages (no LFO+ tab there, and no room for LFO 3's).
  *
  * Memory: 0x1000 bytes behind Prism's block (master.c takes both from the firmware's permanent allocator at boot); the
  * second half of them is gran.c's.
