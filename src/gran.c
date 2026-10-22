@@ -1,6 +1,7 @@
 /*
  * Granular pads: Grain Size and Density as modulation destinations, and LFO 2 / 3 on the granular pad pages.
- * Also LFO 2 / 3 Depth (lfo.c's knobs 0x1c8 / 0x1c9) as modulation destinations, on every pad.
+ * Also LFO 2 / 3 Depth (lfo.c's knobs 0x1c8 / 0x1c9) as modulation destinations, on every pad; and (JBGRAN 5)
+ * Window, Scatter and Pan Rnd, the three other grain knobs a grain reads as it starts.
  * Original 1010music Blackbox, firmware 3.1.9.
  *
  * A granular pad is a class A pad (the Sample pad's engine) with byte pad +0x589 set (mode 0x8b == 3). Its voices
@@ -8,6 +9,11 @@
  * as it is at that moment:
  *   pad +0x590  grain size in samples (knob 0x17c: 1200 + knob * 47744, floored to a multiple of 840; 0x57 = synced)
  *   pad +0x5a0  density, 0..1 (knob 0x180); FUN_08059158 turns it into a grain count (+0x58c) and a gap (+0x5a4)
+ *   pad +0x594  window, samples (knob 0x5b: 1824000 * knob^3): each grain's read position moves by a random amount
+ *               within it, centred
+ *   pad +0x598  scatter, samples (knob 0x17e: the table at 0x080eb2a0, 97 steps, 0..39317): added to the start time of
+ *               every grain but a cycle's first, and only while there is a gap (density under 50 %)
+ *   pad +0x59c  pan random, 0..1 (knob 0x17f)
  * Stock modulates none of the grain knobs but Speed (0x5d): the voice attach (FUN_0805623c) has no parameter object
  * for them, and the pad screen only offers the MOD page for the 28 parameters in its list at 0x080f12bc.
  *
@@ -15,7 +21,8 @@
  * target, so a slot on Grain Size or Density is already there; it just has nothing to act on. Here:
  *   Grain Size  gran_grain_start wraps every call of FUN_08057ab0 (respawn, voice start, density change): the size is
  *               moved by the sum of the slots, for that voice, while the grain is set up, then put back. Each grain
- *               keeps the size it started with.
+ *               keeps the size it started with. Window, Scatter and Pan Rnd the same way, each moved on its knob's
+ *               own curve (the cube for Window, the table's steps for Scatter).
  *   Density     per pad, once per engine block (gran_pad_process wraps the pad's block, FUN_080596b0 @0x0805bb5a):
  *               the slots move the knob's value and FUN_08059158 is run, the same as turning the knob. Per-voice
  *               sources (VEL, KEY, LFO, ENV) are read from the pad's first playing voice.
@@ -42,6 +49,7 @@ typedef int (*pad_process_fn)(uint8_t *pad, void **ctx);
 typedef void (*density_fn)(uint8_t *pad, void *now);
 typedef void (*attach_fn)(uint8_t *pad, const uint8_t *source, unsigned target, unsigned slot, float amount);
 typedef void (*reset_fn)(uint8_t *obj);
+typedef float (*powf_fn)(float x, float y);
 #define VT_A 0x080d06c8u         /* class A pad's vtable */
 #define VT_B 0x080d0890u         /* class B pad's vtable */
 #define fw_grain_start ((grain_start_fn)FN(0x08057ab0))
@@ -50,11 +58,16 @@ typedef void (*reset_fn)(uint8_t *obj);
 #define fw_attach      ((attach_fn)FN(0x0805511c))
 #define fw_attach_b    ((attach_fn)FN(0x08063df0))
 #define fw_reset_obj   ((reset_fn)FN(0x08076080))
+#define fw_powf        ((powf_fn)FN(0x080c7e8c))       /* the one FUN_08060848 turns the Window knob with */
+#define SCATTER_TABLE  ((const int32_t *)0x080eb2a0u)   /* 97 steps, rising */
 
 #define T_SIZE    0x17c          /* Grain Size (percent knob, "grainsizeperc") */
 #define T_DENSITY 0x180          /* Density ("graindensity") */
 #define T_DEPTH   0x1c8          /* LFO 2 Depth; LFO 3's is 0x1c9 (lfo.c) */
-#define TARGETS   4              /* Grain Size, Density, LFO 2 Depth, LFO 3 Depth */
+#define T_WINDOW  0x5b           /* Window ("gainssrcwin") */
+#define T_SCATTER 0x17e          /* Scatter ("grainscat") */
+#define T_PANRND  0x17f          /* Pan Rnd ("grainpanrnd") */
+#define TARGETS   7              /* in target_index's order */
 
 #define PAD_VOICES   0x2c        /* voice pointers, count at +0x6c; a voice is playing while its first byte is set */
 #define PAD_NVOICES  0x6c
@@ -63,6 +76,10 @@ typedef void (*reset_fn)(uint8_t *obj);
 #define PAD_GRANULAR 0x589
 #define PAD_SIZE     0x590
 #define PAD_DENSITY  0x5a0
+#define PAD_WINDOW   0x594
+#define PAD_SCATTER  0x598
+#define PAD_PANRND   0x59c
+#define WINDOW_SPAN  1824000.0f  /* 38 s at 48 kHz: the Window knob's top, before the cube */
 
 #define SIZE_SPAN    47744       /* the Grain Size knob's whole range, in samples */
 #define SIZE_TOP     48944
@@ -89,9 +106,9 @@ struct gran_state {
     struct ext ext[16][TARGETS][3];  /* CC and engine-wide sources: pad, target (as target_index), slot */
     float depth[16][2];          /* LFO 2 / 3 Depth from the slot list, for lfo_tick's next look; used once */
 };
-#define GRAN_MAGIC  0x47524e33u  /* "GRN3" */
-#define GRAN_OFFSET (0x56800u + 0x800u)                  /* in lfo.c's 0x1000 bytes, behind its state */
-_Static_assert(sizeof(struct gran_state) <= 0x800, "lfo.c's block has 0x800 bytes for gran.c");
+#define GRAN_MAGIC  0x47524e34u  /* "GRN4" */
+#define GRAN_OFFSET (0x56800u + 0x440u)                  /* in lfo.c's 0x1000 bytes, behind its state */
+_Static_assert(sizeof(struct gran_state) <= 0x1000 - 0x440, "lfo.c's block has 0xbc0 bytes for gran.c");
 
 static struct gran_state *gran_state(void)
 {
@@ -113,17 +130,26 @@ static unsigned pad_index(const uint8_t *pad)
     return ((id >> 8) & 3) * 4 + (id & 3);
 }
 
-/* 0..3 for our targets, -1 for anything else */
+/* 0..6 for our targets (Size, Density, LFO 2 Depth, LFO 3 Depth, Window, Scatter, Pan Rnd), -1 for anything else */
 static int target_index(unsigned target)
 {
-    return target == T_SIZE ? 0 : target == T_DENSITY ? 1 : target - T_DEPTH < 2u ? 2 + (int)(target - T_DEPTH) : -1;
+    switch (target) {
+    case T_SIZE:      return 0;
+    case T_DENSITY:   return 1;
+    case T_DEPTH:     return 2;
+    case T_DEPTH + 1: return 3;
+    case T_WINDOW:    return 4;
+    case T_SCATTER:   return 5;
+    case T_PANRND:    return 6;
+    default:          return -1;
+    }
 }
 
-/* The MOD page's parameter list: stock's 28 (0x080f12bc), then Grain Size, Density, LFO 2 / 3 Depth. */
-const uint16_t gran_mod_targets[32] = {
+/* The MOD page's parameter list: stock's 28 (0x080f12bc), then ours. */
+const uint16_t gran_mod_targets[35] = {
     4, 0x62, 0x5c, 0x8f, 0x90, 0x91, 0x92, 0x4e, 0xa2, 0xc8, 0x11, 0x33, 0x32, 0x38, 0x37, 0x3a,
     0x5d, 0xb, 9, 0xa, 0x3c, 0x3e, 0x40, 0x32, 0x33, 0x38, 0x37, 0x3a,
-    T_SIZE, T_DENSITY, T_DEPTH, T_DEPTH + 1,
+    T_SIZE, T_DENSITY, T_DEPTH, T_DEPTH + 1, T_WINDOW, T_SCATTER, T_PANRND,
 };
 
 /* A slot's source, as envmod.c and FUN_0805623c find it: an object whose value is the float at +4. */
@@ -161,8 +187,9 @@ static int ext_sum(const struct gran_state *s, unsigned q, int t, float *sum)
     return routed;
 }
 
-/* Sum of amount * value over the pad's slots on `target` (one of ours); 0 if none is routed there. */
-static int mod_sum(const uint8_t *pad, const uint8_t *voice, unsigned target, float *sum)
+/* Sum of amount * value over the pad's slots on `target` (one of ours); 0 if none is routed there. `s`: gran_state(),
+   looked up once by the caller (it may be 0: then only the slot list counts). */
+static int mod_sum(const struct gran_state *s, const uint8_t *pad, const uint8_t *voice, unsigned target, float *sum)
 {
     const struct entry *e = (const struct entry *)(pad + PAD_LIST);
     uint32_t n = *(const uint32_t *)(pad + PAD_COUNT);
@@ -176,8 +203,7 @@ static int mod_sum(const uint8_t *pad, const uint8_t *voice, unsigned target, fl
         if (v)
             m += e[i].amount * *v;
     }
-    struct gran_state *s = gran_state();
-    if (s && target != T_DEPTH && target != T_DEPTH + 1)     /* Depth's CC part: gran_depth, for every pad class */
+    if (s && target - T_DEPTH >= 2u)                         /* Depth's CC part: gran_depth, for every pad class */
         routed |= ext_sum(s, pad_index(pad), target_index(target), &m);
     *sum = m;
     return routed;
@@ -197,20 +223,70 @@ static uint8_t *first_voice(uint8_t *pad)
 
 /* ---- Grain Size: every grain start ---- */
 
+/* Which of our targets (bits by target_index) have anything on them for this pad: one pass over the slot list and
+   the CC slots, so a grain with nothing routed costs only this. */
+static unsigned grain_routed(const struct gran_state *s, const uint8_t *pad)
+{
+    const struct entry *e = (const struct entry *)(pad + PAD_LIST);
+    uint32_t n = *(const uint32_t *)(pad + PAD_COUNT);
+    unsigned bits = 0;
+    for (uint32_t i = 0; i < n && i < 8; i++) {
+        int t = target_index(e[i].target);
+        if (t >= 0)
+            bits |= 1u << t;
+    }
+    if (s) {
+        const struct ext *x = &s->ext[pad_index(pad)][0][0];
+        for (int k = 0; k < TARGETS * 3; k++)
+            if (x[k].source)
+                bits |= 1u << (k / 3);
+    }
+    return bits;
+}
+
+static float clamp01(float v)
+{
+    return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+}
+
 /* Replaces bl FUN_08057ab0 @0x08057fba, 0x08058b8a, 0x0805961e, 0x08059692. */
 void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x, uint8_t *grain)
 {
+    const struct gran_state *s;
+    unsigned routed;
     int32_t *size = (int32_t *)(pad + PAD_SIZE), knob = *size;
+    int32_t *window = (int32_t *)(pad + PAD_WINDOW), win = *window;
+    int32_t *scatter = (int32_t *)(pad + PAD_SCATTER), scat = *scatter;
+    float *panrnd = (float *)(pad + PAD_PANRND), pan = *panrnd;
     float m;
-    if (pad[PAD_GRANULAR] && mod_sum(pad, voice, T_SIZE, &m) && m != 0.0f) {
-        int32_t top = knob > SIZE_TOP ? knob : SIZE_TOP;  /* a synced size may be longer than the knob goes */
-        int32_t s = knob + (int32_t)(m * (float)SIZE_SPAN);
-        s = s > top ? top : s;
-        s = s / SIZE_STEP * SIZE_STEP;
-        *size = s < SIZE_STEP ? SIZE_STEP : s;
+    if (pad[PAD_GRANULAR] && (routed = grain_routed(s = gran_state(), pad)) != 0) {
+        if ((routed & 1) && mod_sum(s, pad, voice, T_SIZE, &m) && m != 0.0f) {
+            int32_t top = knob > SIZE_TOP ? knob : SIZE_TOP;  /* a synced size may be longer than the knob goes */
+            int32_t s = knob + (int32_t)(m * (float)SIZE_SPAN);
+            s = s > top ? top : s;
+            s = s / SIZE_STEP * SIZE_STEP;
+            *size = s < SIZE_STEP ? SIZE_STEP : s;
+        }
+        if ((routed & 1 << 4) && mod_sum(s, pad, voice, T_WINDOW, &m) && m != 0.0f) {
+            float k = win > 0 ? fw_powf((float)win * (1.0f / WINDOW_SPAN), 1.0f / 3.0f) : 0.0f;
+            k = clamp01(k + m);
+            *window = (int32_t)(WINDOW_SPAN * k * k * k);
+        }
+        if ((routed & 1 << 5) && mod_sum(s, pad, voice, T_SCATTER, &m) && m != 0.0f) {
+            int i = 0;
+            while (i < 96 && SCATTER_TABLE[i + 1] <= scat)
+                i++;                                     /* the knob's step */
+            i += (int)(m * 96.0f + (m < 0.0f ? -0.5f : 0.5f));
+            *scatter = SCATTER_TABLE[i < 0 ? 0 : i > 96 ? 96 : i];
+        }
+        if ((routed & 1 << 6) && mod_sum(s, pad, voice, T_PANRND, &m) && m != 0.0f)
+            *panrnd = clamp01(pan + m);
     }
     fw_grain_start(pad, now, voice, first, x, grain);
     *size = knob;
+    *window = win;
+    *scatter = scat;
+    *panrnd = pan;
 }
 
 /* ---- Density: once per block ---- */
@@ -223,7 +299,7 @@ static void density(uint8_t *pad, void *now)
     unsigned q = pad_index(pad);
     uint32_t bit = 1u << q;
     float *d = (float *)(pad + PAD_DENSITY), m;
-    int routed = mod_sum(pad, first_voice(pad), T_DENSITY, &m);
+    int routed = mod_sum(s, pad, first_voice(pad), T_DENSITY, &m);
     if (!(s->on & bit)) {
         if (!routed)
             return;
@@ -237,7 +313,7 @@ static void density(uint8_t *pad, void *now)
         s->on &= ~bit;                                   /* routing gone: put the knob's value back */
     else
         want += m;
-    want = want < 0.0f ? 0.0f : want > 1.0f ? 1.0f : want;
+    want = clamp01(want);
     float diff = want - *d;
     if (diff < 0.002f && diff > -0.002f && routed)
         return;
@@ -265,7 +341,7 @@ static void depth_slots(uint8_t *pad)
     uint8_t *voice = first_voice(pad);
     unsigned q = pad_index(pad);
     for (int k = 0; k < 2; k++)
-        mod_sum(pad, voice, T_DEPTH + (unsigned)k, &s->depth[q][k]);
+        mod_sum(s, pad, voice, T_DEPTH + (unsigned)k, &s->depth[q][k]);
 }
 
 /* lfo.c, once per engine block for each LFO in use: what the slots add to its Depth knob (0..1 = the knob's range). */

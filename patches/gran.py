@@ -8,7 +8,7 @@ from thumb import ROOT, bl, symbols, word
 
 sym = symbols(os.path.join(ROOT, "out", "cave.elf"))
 TARGETS = sym["gran_mod_targets"]
-N_STOCK, N_OURS = 28, 32
+N_STOCK, N_OURS = 28, 35
 
 
 def hook(at, stock, name):
@@ -31,7 +31,7 @@ PATCHES = [
     hook(0x08068556, 0x08076080, "gran_reset_b"),
     # UI: the pad screen's list of parameters that have a MOD page (FUN_080b8898, FUN_080b892c)
     (0x080B8924, word(0x080F12BC), word(TARGETS)),
-    (0x080B88D6, bytes.fromhex("03f13801"), bytes.fromhex("03f1") + bytes([2 * N_OURS]) + bytes.fromhex("01")),  # add.w r1,r3,#0x38 -> #0x40
+    (0x080B88D6, bytes.fromhex("03f13801"), bytes.fromhex("03f1") + bytes([2 * N_OURS]) + bytes.fromhex("01")),  # add.w r1,r3,#0x38 -> #0x46
     (0x080B8BF8, word(0x080F12BC), word(TARGETS)),
     (0x080B896A, bytes([N_STOCK, 0x22]), bytes([N_OURS, 0x22])),   # movs r2,#28 -> #30
     (0x080B8980, bytes([N_STOCK, 0x22]), bytes([N_OURS, 0x22])),

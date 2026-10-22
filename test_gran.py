@@ -50,12 +50,13 @@ def rf(a):
 
 # ---- the image
 T = e.sym["gran_mod_targets"]
-check("MOD page list: stock's 28 and then Grain Size (0x17c), Density (0x180), LFO 2 / 3 Depth (0x1c8, 0x1c9)",
-      words(img, T, 32) == words(stock, 0x080F12BC, 28) + [0x17C, 0x180, 0x1C8, 0x1C9], words(img, T, 32))
-check("...both users of the list point at it, the loop runs to its end and both counts say 32",
+OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F]
+check("MOD page list: stock's 28, then Grain Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd",
+      words(img, T, 35) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 35))
+check("...both users of the list point at it, the loop runs to its end and both counts say 35",
       struct.unpack("<II", img[0x080B8924 - BASE:0x080B8928 - BASE] + img[0x080B8BF8 - BASE:0x080B8BFC - BASE]) == (T, T)
-      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14001")
-      and img[0x080B896A - BASE] == 32 and img[0x080B8980 - BASE] == 32)
+      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14601")
+      and img[0x080B896A - BASE] == 35 and img[0x080B8980 - BASE] == 35)
 for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Clip", 0x080EF9D8, 5), ("Slicer", 0x080EF870, 5),
                          ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5)):
     got = words(img, page, have + 3)
@@ -87,7 +88,7 @@ e.uc.mem_map(0x38800000, 0x1000)
 e.uc.mem_map(0x58024000, 0x1000)
 e.uc.mem_map(0xC0000000, 0x90000)
 BLOCKMEM, LFOS = 0xC0000000, 0xC0000000 + 0x56800
-GRAN = LFOS + 0x800
+GRAN = LFOS + 0x440
 e.w32(0x38800F70, BLOCKMEM)
 e.w32(0x38800F74, BLOCKMEM ^ 0x5052534D)
 e.w32(LFOS, 0x4C464F33)                       # lfo.c's state, started
@@ -99,6 +100,7 @@ def lfo_value(q, k, v):
 
 PAD, VOICE, VOICE2, NOW, CTX = 0x24030000, 0x24031000, 0x24032000, 0x24033000, 0x24033100
 SIZE, DENS = PAD + 0x590, PAD + 0x5A0
+WIN, SCAT, PANR = PAD + 0x594, PAD + 0x598, PAD + 0x59C
 
 
 def fresh(pad_id=0x0201):
@@ -119,7 +121,7 @@ def slots(*entries):
 seen = []
 def grain_start():
     sp = e.uc.reg_read(UC_ARM_REG_SP)
-    seen.append((e.r32(SIZE), [e.arg(i) for i in range(4)], (e.r32(sp), e.r32(sp + 4))))
+    seen.append((e.r32(SIZE), [e.arg(i) for i in range(4)], (e.r32(sp), e.r32(sp + 4)), e.r32(WIN), e.r32(SCAT), rf(PANR)))
 
 
 e.stub(0x08057AB0, grain_start)
@@ -164,6 +166,41 @@ wf(VOICE2 + 0x90, -0.2)                        # KEY: an octave below middle C
 check("the voice that starts the grain is the one read: VEL 1 and KEY -0.2 -> +0.4 of the range", start(VOICE2) == (24360 + int(0.4 * 47744)) // 840 * 840, start(VOICE2))
 slots((0.5, 0x17C, 0x19), (0.5, 0x17C, 0x10))
 check("MIDI and duck sources are not in the slot list's reach: no change", start() == 24360, start())
+
+# ---- Window, Scatter, Pan Rnd: each grain, on its knob's own curve
+TABLE = list(struct.unpack("<97i", stock[0x080EB2A0 - BASE:0x080EB2A0 - BASE + 97 * 4]))
+
+
+def grain3(win, scat, pan):
+    e.w32(WIN, win)
+    e.w32(SCAT, scat)
+    wf(PANR, pan)
+    start()
+    got = seen[0][3:6]
+    pan32 = struct.unpack("<f", struct.pack("<f", pan))[0]
+    back = (e.r32(WIN), e.r32(SCAT), rf(PANR)) == (win, scat, pan32)
+    return got[0], got[1], round(got[2], 4), back
+
+
+fresh()
+win_half = int(1824000 * 0.5 ** 3)              # the Window knob at 50 %
+check("no slots: Window, Scatter, Pan Rnd reach the grain as they are", grain3(win_half, TABLE[48], 0.3) == (win_half, TABLE[48], 0.3, True))
+slots((0.25, 0x5B, 0xD), (-0.25, 0x17E, 0xD), (0.5, 0x17F, 0xD))
+wf(VOICE + 0x88, 1.0)
+w, sc, pr, back = grain3(win_half, TABLE[48], 0.3)
+check(f"VEL 1: Window knob 50 % + 25 % -> 75 %, on the cube ({w} vs {int(1824000 * 0.75 ** 3)})", abs(w - 1824000 * 0.75 ** 3) < 200, w)
+check(f"...Scatter step 48 - 25 % of 96 -> step 24 ({sc} = table {TABLE[24]})", sc == TABLE[24], sc)
+check("...Pan Rnd 0.3 + 0.5 = 0.8; and all three put back after the grain", pr == 0.8 and back, (pr, back))
+w, sc, pr, back = grain3(0, TABLE[0], 0.9)
+check("from the bottom: Window 0 + 25 % -> 25 % on the cube, Scatter step 0 - 25 % stays 0, Pan Rnd clamped at 1",
+      abs(w - 1824000 * 0.25 ** 3) < 50 and sc == TABLE[0] and pr == 1.0 and back, (w, sc, pr))
+slots((1.0, 0x5B, 5), (1.0, 0x17E, 5), (-1.0, 0x17F, 5))
+lfo_value(9, 0, 1.0)
+w, sc, pr, back = grain3(win_half, TABLE[48], 0.3)
+check("LFO2 at +1, all +100 %: Window and Scatter at their tops, Pan Rnd (-100 %) at 0",
+      w == 1824000 and sc == TABLE[96] and pr == 0.0, (w, sc, pr))
+e.uc.mem_write(PAD + 0x589, b"\x00")
+check("a pad that is not granular: none of the three moved", grain3(win_half, TABLE[48], 0.3) == (win_half, TABLE[48], 0.3, True))
 
 # ---- Density
 blocks, dens = [], []
@@ -283,7 +320,7 @@ fresh(0x0201)
 check("CC slots are per pad", start() == 24360, start())
 
 # ---- LFO 2 / 3 Depth: slot-list part from the class A pad's block, CC part per pad, both through gran_depth
-DEPTH = GRAN + 136 + 16 * 4 * 3 * 8
+DEPTH = GRAN + 136 + 16 * 7 * 3 * 8
 
 
 def gran_depth(q, k):

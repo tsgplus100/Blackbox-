@@ -10,9 +10,9 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JBGRAN 4 (granular modulation, LFO Depth)
+## This fork: JBGRAN 5 (granular modulation, LFO Depth)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 4`.
+A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 5`.
 Everything in JOEBOX 1 is still there.
 
 - **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
@@ -20,6 +20,11 @@ Everything in JOEBOX 1 is still there.
   PUMP, LINR). 100 % is the knob's whole range.
   Grain Size is read as each grain starts, so every grain keeps the size it was born with. Density moves once per
   engine block (5.3 ms) the same way turning its knob does; per-note sources come from the pad's first playing voice.
+- **Window, Scatter and Pan Rnd as modulation destinations** (JBGRAN 5), with the same sources, read as each grain
+  starts and moved along each knob's own curve (Window's cube, Scatter's 97 steps). Window is the random spread of
+  each grain's read position; Pan Rnd its random place in the stereo field; Scatter is not random: it delays every
+  grain of a cycle but the first, and only while Density is under 50 % (above that there is no gap and the engine
+  ignores it).
 - **LFO 2 on Granular pads, all of it.** The engine already took LFO 2 and 3; now LFO 2's five knobs are on the
   pad's pages: `2 Wave`, `2 Rate`, `2 Depth` after the stock LFO's on the LFO tab, `2 Trig`, `2 Offset` after the
   grain knobs on the Gran tab (eight knobs a page is all the screen has). LFO 3 has no knobs on these pads; as a
@@ -29,10 +34,10 @@ Everything in JOEBOX 1 is still there.
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-4.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-5.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN ran on a unit; the MIDI, CC and duck
 sources (JBGRAN 2) and Depth (JBGRAN 3) have not been on hardware yet. JBGRAN 4
-only moves the Granular pads' knobs. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
+only moved the Granular pads' knobs; JBGRAN 5's three new destinations are untested on hardware too. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
 `patches/gran.py`, `test_gran.py`, `test_lfo.py`.
 
 ## What it adds (JOEBOX 1)

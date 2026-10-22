@@ -17,7 +17,7 @@
  * engine path is the Sample pad's, and gran.c puts LFO 2's five knobs on their LFO and Gran pages (no LFO+ tab there, and no room for LFO 3's).
  *
  * Memory: 0x1000 bytes behind Prism's block (master.c takes both from the firmware's permanent allocator at boot); the
- * second half of them is gran.c's.
+ * part from 0x440 on is gran.c's.
  * UI: the pad parameter screen has three tab bars (FUN_080b8c0c builds them): 0 = Main Pos LFO Conf, 1 = the granular
  * one with a fourth tab "Gran" for page 3, 2 = Main LFO Conf for multisamples. Page 3 is empty for Sample, Multi, Clip
  * and Slicer pads, so its eight slots hold these knobs, and those pads are given bar 1 with the tab relabelled "LFO+".
@@ -119,7 +119,7 @@ struct lfo_state {
     float depth[16][2];          /* the Depth knobs, 0..1 */
 };
 #define LFO_MAGIC 0x4c464f33u    /* "LFO3": the Depths joined the state (3.1 JBGRAN 3) */
-_Static_assert(sizeof(struct lfo_state) <= 0x800, "gran.c keeps its state in the second half of the LFOs' 0x1000 bytes");
+_Static_assert(sizeof(struct lfo_state) <= 0x440, "gran.c keeps its state in the LFOs' 0x1000 bytes from 0x440 on");
 #define DUCK_TRIGS (*(volatile uint16_t *)(0x2405ff70u + 14))   /* duck_state's spare bytes: a bit per pad, set at voice start */
 
 uint8_t *master_block(void);     /* master.c: the boot-time SDRAM block, or 0 */
