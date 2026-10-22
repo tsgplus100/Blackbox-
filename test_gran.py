@@ -50,28 +50,34 @@ def rf(a):
 
 # ---- the image
 T = e.sym["gran_mod_targets"]
-OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F]
-check("MOD page list: stock's 28, then Grain Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd",
-      words(img, T, 35) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 35))
-check("...both users of the list point at it, the loop runs to its end and both counts say 35",
+OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F, 0x1CA, 0x1CB]
+check("MOD page list: stock's 28, then Grain Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd, Scan, Pitch Rnd",
+      words(img, T, 37) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 37))
+check("...both users of the list point at it, the loop runs to its end and both counts say 37",
       struct.unpack("<II", img[0x080B8924 - BASE:0x080B8928 - BASE] + img[0x080B8BF8 - BASE:0x080B8BFC - BASE]) == (T, T)
-      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14601")
-      and img[0x080B896A - BASE] == 35 and img[0x080B8980 - BASE] == 35)
+      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14a01")
+      and img[0x080B896A - BASE] == 37 and img[0x080B8980 - BASE] == 37)
 for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Clip", 0x080EF9D8, 5), ("Slicer", 0x080EF870, 5),
                          ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5)):
     got = words(img, page, have + 3)
     check(f"{name} page: its own {have} knobs, then 2 Depth and 3 Depth, then the end",
           got[:have] == words(stock, page, have) and words(stock, page, have + 3)[have:] == [0, 0, 0] and got[have:] == [0x1C8, 0x1C9, 0], got)
-for name, pages, have, add in (("LFO", (0x080EF5A0, 0x080EF000), 5, [0x1A9, 0x1AA, 0x1C8]),     # 2 Wave, 2 Rate, 2 Depth
-                               ("Gran", (0x080EF5E8, 0x080EF048), 6, [0x1AB, 0x1AC])):           # 2 Trig, 2 Offset
-    for copy, base in zip(("", " (second copy)"), pages):
-        got = words(img, base, 9)
-        check(f"Granular {name} page{copy}: its own {have} knobs, then {', '.join(hex(x) for x in add)}, at most eight, ends in 0",
-              got[:have] == words(stock, base, have) and got[have:have + len(add)] == add and got[have + len(add):] == [0] * (9 - have - len(add)), got)
+for copy, base in zip(("", " (second copy)"), (0x080EF5A0, 0x080EF000)):
+    check(f"Granular LFO page{copy}: LFO 1 Waveform / Rate / Depth (no Beat Sync, no Trig), then LFO 2's five",
+          words(stock, base, 6) == [8, 9, 0xB, 0xC, 0xD, 0] and words(img, base, 9) == [8, 9, 0xB, 0x1A9, 0x1AA, 0x1C8, 0x1AB, 0x1AC, 0], words(img, base, 9))
+for copy, base in zip(("", " (second copy)"), (0x080EF5E8, 0x080EF048)):
+    check(f"Granular Gran page{copy}: its own six, then Scan and Pitch Rnd",
+          words(img, base, 6) == words(stock, base, 6) and words(stock, base, 7)[6] == 0 and words(img, base, 9)[6:] == [0x1CA, 0x1CB, 0], words(img, base, 9))
 for at in (0x08057FBA, 0x08058B8A, 0x0805961E, 0x08059692):
     check(f"grain start @{at:#x} goes through gran_grain_start", bl_target(at) == e.sym["gran_grain_start"] and
           struct.unpack("<HH", stock[at - BASE:at - BASE + 4]) != struct.unpack("<HH", img[at - BASE:at - BASE + 4]))
 check("the class A pad's block goes through gran_pad_process", bl_target(0x0805BB5A) == e.sym["gran_pad_process"])
+for copy, base in zip(("", " (second copy)"), (0x080EF630, 0x080EF090)):
+    check(f"Granular Conf page{copy}: Insert and Input right under Saturation, the stock rows after, no Fidelity",
+          words(img, base, 11) == [0xDB, 0x1B6, 0x1C7, 0x93, 0x95, 0x62, 0xC4, 0x6A, 0xD0, 0xF5, 0]
+          and words(stock, base, 9) == [0xDB, 0x93, 0x95, 0x62, 0xC4, 0x6A, 0xD0, 0xF5, 0], words(img, base, 11))
+check("the insert's run hook is where the Granular voice loop ends too (b.w 0x08059a7c @0x0805a9fe, stock)",
+      img[0x0805A9FE - BASE:0x0805AA02 - BASE] == stock[0x0805A9FE - BASE:0x0805AA02 - BASE] == bytes.fromhex("fff73db8"))
 check("Granular pads' Pos pages are stock's", all(words(img, a, 9) == words(stock, a, 9) for a in (0x080EF558, 0x080EEFB8)))
 check("no LFO 3 knob on any Granular page", not any(x in (0x1AD, 0x1AE, 0x1AF, 0x1B0, 0x1C9)
                                                    for b in (0x080EF510, 0x080EEF70) for x in words(img, b, 5 * 0x24)))
@@ -89,6 +95,7 @@ e.uc.mem_map(0x58024000, 0x1000)
 e.uc.mem_map(0xC0000000, 0x90000)
 BLOCKMEM, LFOS = 0xC0000000, 0xC0000000 + 0x56800
 GRAN = LFOS + 0x440
+EXT = 6                                       # bytes a CC slot: source, amount per mille (packed)
 e.w32(0x38800F70, BLOCKMEM)
 e.w32(0x38800F74, BLOCKMEM ^ 0x5052534D)
 e.w32(LFOS, 0x4C464F33)                       # lfo.c's state, started
@@ -201,6 +208,81 @@ check("LFO2 at +1, all +100 %: Window and Scatter at their tops, Pan Rnd (-100 %
       w == 1824000 and sc == TABLE[96] and pr == 0.0, (w, sc, pr))
 e.uc.mem_write(PAD + 0x589, b"\x00")
 check("a pad that is not granular: none of the three moved", grain3(win_half, TABLE[48], 0.3) == (win_half, TABLE[48], 0.3, True))
+
+# ---- Scan and Pitch Rnd: our knobs, read from the app's pad store once a block
+APPPADS = 0x24020088 + 0x1840
+SAMPLE = 0x2403A000
+
+
+def knobs(scan, pitchrnd, q=9):
+    arr = 0x2403B000 + q * 0x40
+    e.uc.mem_write(arr, struct.pack("<HHIHHI", 0x1CA, 0, scan, 0x1CB, 0, pitchrnd))
+    store = APPPADS + (q >> 2) * 0xF0 + (q & 3) * 0x30
+    e.w32(store + 4, arr)
+    e.uc.mem_write(store + 10, struct.pack("<H", 2))
+    e.call("gran_pad_process", PAD, CTX)       # reads them for the next grains
+
+
+rates = []
+
+
+def grain_rate():
+    rates.append(rf(e.r32(e.uc.reg_read(UC_ARM_REG_SP) + 4) + 0x24))
+
+
+def start_at(head, fixed=False, fixpos=0, rate=1.0):
+    """A grain start; returns (playhead, fixed position) as the stock grain start saw them, and the grain's rate after."""
+    e.uc.mem_write(VOICE + 0x10, struct.pack("<q", head))
+    e.uc.mem_write(PAD + 0x5B5, b"\x01" if fixed else b"\x00")
+    e.w32(PAD + 0x5B8, fixpos)
+    wf(GRAIN + 0x24, rate)
+    looked.clear()
+    e.w32(STACK, 0x5A)
+    e.w32(STACK + 4, GRAIN)
+    e.call("gran_grain_start", PAD, NOW, VOICE, 1)
+    back = struct.unpack("<q", e.uc.mem_read(VOICE + 0x10, 8))[0] == head and e.r32(PAD + 0x5B8) == fixpos
+    return looked[0][0], looked[0][1], round(rf(GRAIN + 0x24), 4), back
+
+
+GRAIN = 0x2403C000
+looked = []
+e.stub(0x08057AB0, lambda: looked.append((struct.unpack("<q", e.uc.mem_read(VOICE + 0x10, 8))[0], e.r32(PAD + 0x5B8))))
+e.stub(0x080636F0, lambda: None, value=100000)              # the sample: 100000 frames
+e.stub(0x080596B0, value=1)
+e.stub(0x08059158)
+e.w32(CTX, NOW)
+fresh()
+e.w32(VOICE + 0xC, SAMPLE)
+knobs(0, 0)
+check("Scan 0, Pitch Rnd 0: the grain reads at the playhead, at its own rate, and the playhead is not touched",
+      start_at(40000) == (40000, 0, 1.0, True), start_at(40000))
+knobs(250, 0)
+check("Scan 25 %: a quarter of the sample further on (40000 -> 65000), playhead put back", start_at(40000) == (65000, 0, 1.0, True), start_at(40000))
+check("...wrapping round the end (90000 -> 15000)", start_at(90000)[0] == 15000, start_at(90000))
+check("...on a fixed point (per mille): 900 -> 150, put back after", start_at(0, True, 900)[1:2] == (150,) and start_at(0, True, 900)[3], start_at(0, True, 900))
+slots((0.5, 0x1CA, 5))
+lfo_value(9, 0, 1.0)
+check("Scan 25 % + LFO2 1 x 50 %: 75 % on (10000 -> 85000)", start_at(10000)[0] == 85000, start_at(10000))
+lfo_value(9, 0, -1.0)
+check("...LFO2 at -1: 25 % - 50 % = -25 %, wrapping back (40000 -> 15000)", start_at(40000)[0] == 15000, start_at(40000))
+slots()
+knobs(0, 1000)
+r = [start_at(40000)[2] for _ in range(200)]
+check(f"Pitch Rnd 100 %: every grain its own rate, between half and double ({min(r):.3f} .. {max(r):.3f})",
+      0.5 <= min(r) < 0.6 and 1.8 < max(r) <= 2.0 and len(set(r)) > 150, (min(r), max(r)))
+knobs(0, 83)
+r = [start_at(40000, rate=1.5)[2] for _ in range(100)]
+check(f"Pitch Rnd 8.3 %: about a semitone either way, around the grain's own rate 1.5 ({min(r):.3f} .. {max(r):.3f})",
+      1.5 * 2 ** (-0.083) - 0.002 <= min(r) < 1.48 and 1.52 < max(r) <= 1.5 * 2 ** 0.083 + 0.002, (min(r), max(r)))
+knobs(0, 0)
+slots((0.5, 0x1CB, 5))
+lfo_value(9, 0, 1.0)
+r = [start_at(40000)[2] for _ in range(50)]
+check("Pitch Rnd as a destination: knob 0 + LFO2 x 50 % -> up to half an octave", 2 ** -0.5 - 0.002 <= min(r) and max(r) <= 2 ** 0.5 + 0.002 and len(set(r)) > 40, (min(r), max(r)))
+knobs(250, 0, q=9)
+e.uc.mem_write(PAD + 0x589, b"\x00")
+check("not a granular pad: no Scan, no detune", start_at(40000) == (40000, 0, 1.0, True))
+e.stub(0x08057AB0, grain_start)
 
 # ---- Density
 blocks, dens = [], []
@@ -320,7 +402,7 @@ fresh(0x0201)
 check("CC slots are per pad", start() == 24360, start())
 
 # ---- LFO 2 / 3 Depth: slot-list part from the class A pad's block, CC part per pad, both through gran_depth
-DEPTH = GRAN + 136 + 16 * 7 * 3 * 8
+DEPTH = GRAN + 136 + 16 * 9 * 3 * EXT
 
 
 def gran_depth(q, k):
