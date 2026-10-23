@@ -60,20 +60,21 @@ WAVES = ["Saw", "RevSaw", "Tri", "Tri+", "Sine", "Sine+", "Square", "Sqr+", "Ran
 RATES = ["32 bar", "16 bar", "8 bar", "4 bar", "2 bar", "1 bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"]
 check("registered per LFO: Wave (12), Rate (15 synced lengths), Trig (Free, Retrig, Once); ids 0x1a9.. and 0x1ad..",
       [(l[0], l[1], l[2]) for l in lists] == [(0x1A9, "2 Wave:", WAVES), (0x1AA, "2 Rate:", RATES), (0x1AB, "2 Trig:", ["Free", "Retrig", "Once"]),
-                                              (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"])], lists)
+                                              (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"]),
+                                              (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"])], lists)
 check("...and Offset and Depth 0..100 % (Depth: 0x1c8 / 0x1c9); then gran.c's Scan and Pitch Rnd", [(n[0], n[1], n[2], n[3]) for n in nums] ==
       [(0x1AC, "2 Offset:", 0, 1000), (0x1C8, "2 Depth:", 0, 1000), (0x1B0, "3 Offset:", 0, 1000), (0x1C9, "3 Depth:", 0, 1000),
-       (0x1CA, "Scan:", 0, 1000), (0x1CB, "Pitch Rnd:", 0, 1000)], nums)
+       (0x1CA, "Scan:", 0, 1000), (0x1CB, "Pitch Rnd:", 0, 1000), (0x1CE, "Lvl Rnd:", 0, 1000)], nums)
 check(f"the whole image fits flash bank 1: {len(img)} bytes of at most {0x08100000 - BASE} (the installer refuses a longer one)", len(img) <= 0x08100000 - BASE, len(img))
-check("twelve distinct xml names", len({l[3] for l in lists} | {n[4] for n in nums}) == 12)
+check("fourteen distinct xml names (Pitch Mode is gran.c's list)", len({l[3] for l in lists} | {n[4] for n in nums}) == 14)
 e.stub(0x08093EF6, lambda: added.append((e.arg(1), e.arg(2))))
 e.call("lfo_defaults", 0x24073000, 0xDC, 0)
 check("pad defaults: stock's last entry, then LFO 2 = Sine, 1 bar, Free; LFO 3 = Random, 1/4, Retrig",
       added[:9] == [(0xDC, 0), (0x1A9, 4), (0x1AA, 5), (0x1AB, 0), (0x1AC, 0), (0x1AD, 8), (0x1AE, 8), (0x1AF, 1), (0x1B0, 0)], added)
-check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %, Scan and Pitch Rnd at 0",
+check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %, Scan, Pitch Rnd, Pitch Mode, Lvl Rnd at 0",
       added[9:] == [(0x1B6, 0), (0x1B7, 0), (0x1B8, 0), (0x1B9, 330), (0x1BA, 750), (0x1BB, 500), (0x1BC, 350), (0x1BD, 250), (0x1BE, 500),
-                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000), (0x1CA, 0), (0x1CB, 0)], added[9:])
-check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 86): both places that size one",
+                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000), (0x1CA, 0), (0x1CB, 0), (0x1CD, 0), (0x1CE, 0)], added[9:])
+check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 88): both places that size one",
       img[0x08093F26 - BASE:0x08093F28 - BASE] == bytes.fromhex("6021") and img[0x080949F0 - BASE:0x080949F2 - BASE] == bytes.fromhex("6021"))
 check("page 3 of the Sample and Multisample pad pages lists the eight knobs",
       words(img, 0x080EFCF0, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] and words(img, 0x080EFB88, 9, "H") == list(range(0x1A9, 0x1B1)) + [0])
@@ -81,9 +82,9 @@ check("...and so does page 3 of the Clip and Slicer pad pages", words(img, 0x080
 check("the second copy of the pad pages (cells of class type 0x4c) has them too, and its defaults are hooked",
       all(words(img, b + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] for b in (0x080EF3A8, 0x080EF240, 0x080EF0D8))
       and img[0x080943B4 - BASE:0x080943B8 - BASE] != stock[0x080943B4 - BASE:0x080943B8 - BASE] and img[0x0809423C - BASE:0x08094240 - BASE] != stock[0x0809423C - BASE:0x08094240 - BASE])
-check("Granular pads' page 3 is still their own six grain knobs (gran.c adds Scan / Pitch Rnd behind them)",
+check("Granular pads' page 3 is still their own six grain knobs (gran.c adds Pitch Rnd / Pitch Mode behind them)",
       words(img, 0x080EF510 + 3 * 0x48, 6, "H") == words(stock, 0x080EF510 + 3 * 0x48, 6, "H") and words(stock, 0x080EF510 + 3 * 0x48, 7, "H")[5:] != [0, 0]
-      and words(img, 0x080EF510 + 3 * 0x48, 9, "H")[6:] == [0x1CA, 0x1CB, 0])
+      and words(img, 0x080EF510 + 3 * 0x48, 9, "H")[6:] == [0x1CB, 0x1CD, 0])
 
 # ---- the tab
 VIEW = 0x24048000

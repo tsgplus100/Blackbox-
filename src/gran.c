@@ -7,6 +7,12 @@
  *              so an LFO on it sweeps the grains through the sample (with Speed at 0 the playhead stands still and
  *              Scan alone says where they read).
  *   Pitch Rnd  0x1cb, 0..100 % = up to an octave either way: each grain plays at its own random detune.
+ *   Pitch Mode 0x1cd (JBGRAN 7), a list: Free (any detune), or the detune snapped to the nearest step of a set:
+ *              Semi, Oct, 5th+Oct, Major, Minor, Pent (minor pentatonic), Shimmr (octave up only). Pitch Rnd stays the
+ *              reach, so with Oct at 100 % half the grains play as they are and half jump an octave.
+ *   Lvl Rnd    0x1ce (JBGRAN 7): each grain at its own random level, down to silence at 100 %. Kept in the grain's
+ *              spare word +0x3c (gain q15, tag "LV" in the top half) and applied where the grain's pan gains are
+ *              worked out (gran_thunk.S, both calls in FUN_08057db8).
  * The engine never sees those two knobs (stock's pad ignores the ids): gran_pad_process reads them from the app's
  * pad store once a block and keeps them here.
  * Original 1010music Blackbox, firmware 3.1.9.
@@ -84,7 +90,10 @@ typedef int (*setting_fn)(const void *store, unsigned param);
 #define T_PANRND  0x17f          /* Pan Rnd ("grainpanrnd") */
 #define T_SCAN    0x1ca          /* Scan ("grainscan"), ours */
 #define T_PITCHRND 0x1cb         /* Pitch Rnd ("grainpitchrnd"), ours */
-#define TARGETS   9              /* in target_index's order */
+#define T_PMODE   0x1cd          /* Pitch Mode ("grainpitchmode"), ours; a list, not a destination */
+#define T_LVLRND  0x1ce          /* Lvl Rnd ("grainlvlrnd"), ours */
+#define TARGETS   10             /* in target_index's order */
+#define GRAIN_LEVEL 0x3c         /* the grain's spare word: q15 gain | 0x4c56 << 16 */
 
 #define PAD_VOICES   0x2c        /* voice pointers, count at +0x6c; a voice is playing while its first byte is set */
 #define PAD_NVOICES  0x6c
@@ -125,12 +134,13 @@ struct gran_state {
     float wrote[16];             /* the value written here last, to tell the knob's own changes from ours */
     struct ext ext[16][TARGETS][3];  /* CC and engine-wide sources: pad, target (as target_index), slot */
     float depth[16][2];          /* LFO 2 / 3 Depth from the slot list, for lfo_tick's next look; used once */
-    float scan[16], pitchrnd[16];    /* the Scan and Pitch Rnd knobs, 0..1, read once a block */
+    float scan[16], pitchrnd[16], lvlrnd[16];   /* our knobs, 0..1, read once a block */
+    uint8_t pmode[16];
     uint32_t rng;
 };
-#define GRAN_MAGIC  0x47524e35u  /* "GRN5" */
-#define GRAN_OFFSET (0x56800u + 0x440u)                  /* in lfo.c's 0x1000 bytes, behind its state */
-_Static_assert(sizeof(struct gran_state) <= 0x1000 - 0x440, "lfo.c's block has 0xbc0 bytes for gran.c");
+#define GRAN_MAGIC  0x47524e36u  /* "GRN6" */
+#define GRAN_OFFSET (0x56800u + 0x2d100u)                /* master.c's block, behind comp.c's clipper: 0x1000 of its own */
+_Static_assert(sizeof(struct gran_state) <= 0x1000, "master.c gives gran.c 0x1000 bytes");
 
 static struct gran_state *gran_state(void)
 {
@@ -152,7 +162,7 @@ static unsigned pad_index(const uint8_t *pad)
     return ((id >> 8) & 3) * 4 + (id & 3);
 }
 
-/* 0..8 for our targets (Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd, Scan, Pitch Rnd), else -1 */
+/* 0..9 for our targets (Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd, Scan, Pitch Rnd, Lvl Rnd), else -1 */
 static int target_index(unsigned target)
 {
     switch (target) {
@@ -165,15 +175,16 @@ static int target_index(unsigned target)
     case T_PANRND:    return 6;
     case T_SCAN:      return 7;
     case T_PITCHRND:  return 8;
+    case T_LVLRND:    return 9;
     default:          return -1;
     }
 }
 
 /* The MOD page's parameter list: stock's 28 (0x080f12bc), then ours. */
-const uint16_t gran_mod_targets[37] = {
+const uint16_t gran_mod_targets[38] = {
     4, 0x62, 0x5c, 0x8f, 0x90, 0x91, 0x92, 0x4e, 0xa2, 0xc8, 0x11, 0x33, 0x32, 0x38, 0x37, 0x3a,
     0x5d, 0xb, 9, 0xa, 0x3c, 0x3e, 0x40, 0x32, 0x33, 0x38, 0x37, 0x3a,
-    T_SIZE, T_DENSITY, T_DEPTH, T_DEPTH + 1, T_WINDOW, T_SCATTER, T_PANRND, T_SCAN, T_PITCHRND,
+    T_SIZE, T_DENSITY, T_DEPTH, T_DEPTH + 1, T_WINDOW, T_SCATTER, T_PANRND, T_SCAN, T_PITCHRND, T_LVLRND,
 };
 
 /* A slot's source, as envmod.c and FUN_0805623c find it: an object whose value is the float at +4. */
@@ -273,6 +284,37 @@ static float clamp01(float v)
     return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
 }
 
+static float random(struct gran_state *s)                /* -1 .. 1 */
+{
+    s->rng = s->rng * 1664525u + 1013904223u;
+    return (float)(int32_t)s->rng * (1.0f / 2147483648.0f);
+}
+
+/* Pitch Mode's sets: bit k = k semitones (0..12) is a step; the same steps downwards, but for Shimmr (up only). */
+#define PMODES 8
+static const char *const pmode_names[PMODES] = {"Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"};
+static const uint16_t pmode_steps[PMODES] = {
+    0, 0x1fff, 1 | 1 << 12, 1 | 1 << 7 | 1 << 12, 1 | 1 << 4 | 1 << 7 | 1 << 12, 1 | 1 << 3 | 1 << 7 | 1 << 12,
+    1 | 1 << 3 | 1 << 5 | 1 << 7 | 1 << 10 | 1 << 12, 1 | 1 << 12,
+};
+#define SHIMMER 7
+
+/* The step of the mode's set nearest to `semis` (-12..12) */
+static float snap(float semis, unsigned mode)
+{
+    float a = semis < 0.0f ? -semis : semis, best = 0.0f, gap = 99.0f;
+    for (int k = 0; k <= 12; k++)
+        if (pmode_steps[mode] >> k & 1) {
+            float d = a - (float)k;
+            d = d < 0.0f ? -d : d;
+            if (d < gap) {
+                gap = d;
+                best = (float)k;
+            }
+        }
+    return semis < 0.0f && mode != SHIMMER ? -best : best;
+}
+
 /* Replaces bl FUN_08057ab0 @0x08057fba, 0x08058b8a, 0x0805961e, 0x08059692. */
 void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x, uint8_t *grain)
 {
@@ -284,7 +326,8 @@ void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x,
     float *panrnd = (float *)(pad + PAD_PANRND), pan = *panrnd;
     int64_t *head = (int64_t *)(voice + 0x10), playhead = *head;
     int32_t *fixed = (int32_t *)(pad + PAD_FIXEDPOS), fixpos = *fixed;
-    float m, detune = 0.0f;
+    float m, detune = 0.0f, level = 0.0f;
+    unsigned mode = 0;
     s = pad[PAD_GRANULAR] ? gran_state() : 0;
     if (s) {
         unsigned q = pad_index(pad);
@@ -310,6 +353,10 @@ void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x,
         detune = s->pitchrnd[q];
         if ((routed & 1 << 8) && mod_sum(s, pad, voice, T_PITCHRND, &m))
             detune = clamp01(detune + m);
+        mode = s->pmode[q];
+        level = s->lvlrnd[q];
+        if ((routed & 1 << 9) && mod_sum(s, pad, voice, T_LVLRND, &m))
+            level = clamp01(level + m);
     } else {
         routed = 0;
     }
@@ -343,11 +390,17 @@ void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x,
     *panrnd = pan;
     *head = playhead;
     *fixed = fixpos;
-    if (detune > 0.0f && s) {                           /* up to an octave either way at 100 % */
-        s->rng = s->rng * 1664525u + 1013904223u;
-        float r = (float)(int32_t)s->rng * (1.0f / 2147483648.0f);
-        *(float *)(grain + GRAIN_RATE) *= fw_powf(2.0f, r * detune);
+    if (!s)
+        return;
+    if (detune > 0.0f) {                                /* up to an octave either way at 100 % */
+        float semis = random(s) * 12.0f * detune;
+        if (mode)
+            semis = snap(semis, mode);
+        if (semis != 0.0f)
+            *(float *)(grain + GRAIN_RATE) *= fw_powf(2.0f, semis * (1.0f / 12.0f));
     }
+    float u = 0.5f + 0.5f * random(s);                  /* 0..1 */
+    *(uint32_t *)(grain + GRAIN_LEVEL) = 0x4c560000u | (uint32_t)(32767.0f * (1.0f - level * u));
 }
 
 /* ---- Scan and Pitch Rnd: the knobs, once per block ---- */
@@ -361,22 +414,32 @@ static void knobs(const uint8_t *pad)
     const void *store = (const void *)(APP_PADS + (q >> 2) * 0xf0u + (q & 3) * 0x30u);
     s->scan[q] = (float)fw_setting(store, T_SCAN) * 0.001f;          /* missing (an older preset): 0, which is off */
     s->pitchrnd[q] = (float)fw_setting(store, T_PITCHRND) * 0.001f;
+    s->lvlrnd[q] = (float)fw_setting(store, T_LVLRND) * 0.001f;
+    unsigned mode = (unsigned)fw_setting(store, T_PMODE);
+    s->pmode[q] = (uint8_t)(mode < PMODES ? mode : 0);
 }
 
 /* Registered with the pad parameters (lfo.c's lfo_register) and given their defaults (lfo_defaults). */
 typedef void (*register_num_fn)(void *table, int param, int type, const char *label, int min, int max, const char *xml);
 typedef void (*store_add_fn)(void *store, int param, int value);
 
+typedef void (*register_list_fn)(void *table, int param, const char *label, const char *const *names, int count,
+                                 const char *xml);
+
 void gran_register(void *table)
 {
     ((register_num_fn)FN(0x0808c12c))(table, T_SCAN, 8, "Scan:", 0, 1000, "grainscan");
     ((register_num_fn)FN(0x0808c12c))(table, T_PITCHRND, 8, "Pitch Rnd:", 0, 1000, "grainpitchrnd");
+    ((register_list_fn)FN(0x0808c0d8))(table, T_PMODE, "Pitch Mode:", pmode_names, PMODES, "grainpitchmode");
+    ((register_num_fn)FN(0x0808c12c))(table, T_LVLRND, 8, "Lvl Rnd:", 0, 1000, "grainlvlrnd");
 }
 
 void gran_defaults(void *store)
 {
     ((store_add_fn)FN(0x08093ef6))(store, T_SCAN, 0);
     ((store_add_fn)FN(0x08093ef6))(store, T_PITCHRND, 0);
+    ((store_add_fn)FN(0x08093ef6))(store, T_PMODE, 0);
+    ((store_add_fn)FN(0x08093ef6))(store, T_LVLRND, 0);
 }
 
 /* ---- Density: once per block ---- */

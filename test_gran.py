@@ -6,10 +6,11 @@ engine-wide attach (FUN_0805511c) and the reset helper (FUN_08076080), each reco
 NOT checked: that the MOD page opens on Grain Size and Density, that the knobs show on the LFO and Gran pages, preset
 save / load of those routings, how the modulation sounds.
 """
+import math
 import struct
 import sys
 
-from unicorn.arm_const import UC_ARM_REG_S0, UC_ARM_REG_SP
+from unicorn.arm_const import UC_ARM_REG_R4, UC_ARM_REG_S0, UC_ARM_REG_SP
 
 from emu import BASE, STACK, Emu
 
@@ -50,13 +51,13 @@ def rf(a):
 
 # ---- the image
 T = e.sym["gran_mod_targets"]
-OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F, 0x1CA, 0x1CB]
+OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F, 0x1CA, 0x1CB, 0x1CE]
 check("MOD page list: stock's 28, then Grain Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd, Scan, Pitch Rnd",
-      words(img, T, 37) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 37))
-check("...both users of the list point at it, the loop runs to its end and both counts say 37",
+      words(img, T, 38) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 38))
+check("...both users of the list point at it, the loop runs to its end and both counts say 38",
       struct.unpack("<II", img[0x080B8924 - BASE:0x080B8928 - BASE] + img[0x080B8BF8 - BASE:0x080B8BFC - BASE]) == (T, T)
-      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14a01")
-      and img[0x080B896A - BASE] == 37 and img[0x080B8980 - BASE] == 37)
+      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14c01")
+      and img[0x080B896A - BASE] == 38 and img[0x080B8980 - BASE] == 38)
 for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Clip", 0x080EF9D8, 5), ("Slicer", 0x080EF870, 5),
                          ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5)):
     got = words(img, page, have + 3)
@@ -66,8 +67,14 @@ for copy, base in zip(("", " (second copy)"), (0x080EF5A0, 0x080EF000)):
     check(f"Granular LFO page{copy}: LFO 1 Waveform / Rate / Depth (no Beat Sync, no Trig), then LFO 2's five",
           words(stock, base, 6) == [8, 9, 0xB, 0xC, 0xD, 0] and words(img, base, 9) == [8, 9, 0xB, 0x1A9, 0x1AA, 0x1C8, 0x1AB, 0x1AC, 0], words(img, base, 9))
 for copy, base in zip(("", " (second copy)"), (0x080EF5E8, 0x080EF048)):
-    check(f"Granular Gran page{copy}: its own six, then Scan and Pitch Rnd",
-          words(img, base, 6) == words(stock, base, 6) and words(stock, base, 7)[6] == 0 and words(img, base, 9)[6:] == [0x1CA, 0x1CB, 0], words(img, base, 9))
+    check(f"Granular Gran page{copy}: its own six, then Pitch Rnd and Pitch Mode",
+          words(img, base, 6) == words(stock, base, 6) and words(stock, base, 7)[6] == 0 and words(img, base, 9)[6:] == [0x1CB, 0x1CD, 0], words(img, base, 9))
+for copy, base, have in (("", 0x080EF558, 6), (" (second copy)", 0x080EEFB8, 2)):
+    check(f"Granular Pos page{copy}: its own {have}, then Scan and Lvl Rnd",
+          words(img, base, have) == words(stock, base, have) and words(stock, base, have + 3)[have:] == [0, 0, 0]
+          and words(img, base, have + 3)[have:] == [0x1CA, 0x1CE, 0], words(img, base, have + 3))
+check("Lvl Rnd: both pan-gain calls of the grain renderer go through gran_gain_l / gran_gain_r",
+      bl_target(0x08057EA2) == e.sym["gran_gain_l"] and bl_target(0x08057EAE) == e.sym["gran_gain_r"])
 for at in (0x08057FBA, 0x08058B8A, 0x0805961E, 0x08059692):
     check(f"grain start @{at:#x} goes through gran_grain_start", bl_target(at) == e.sym["gran_grain_start"] and
           struct.unpack("<HH", stock[at - BASE:at - BASE + 4]) != struct.unpack("<HH", img[at - BASE:at - BASE + 4]))
@@ -78,7 +85,6 @@ for copy, base in zip(("", " (second copy)"), (0x080EF630, 0x080EF090)):
           and words(stock, base, 9) == [0xDB, 0x93, 0x95, 0x62, 0xC4, 0x6A, 0xD0, 0xF5, 0], words(img, base, 11))
 check("the insert's run hook is where the Granular voice loop ends too (b.w 0x08059a7c @0x0805a9fe, stock)",
       img[0x0805A9FE - BASE:0x0805AA02 - BASE] == stock[0x0805A9FE - BASE:0x0805AA02 - BASE] == bytes.fromhex("fff73db8"))
-check("Granular pads' Pos pages are stock's", all(words(img, a, 9) == words(stock, a, 9) for a in (0x080EF558, 0x080EEFB8)))
 check("no LFO 3 knob on any Granular page", not any(x in (0x1AD, 0x1AE, 0x1AF, 0x1B0, 0x1C9)
                                                    for b in (0x080EF510, 0x080EEF70) for x in words(img, b, 5 * 0x24)))
 check("the class A pad's vtable +0x40 (engine-wide sources) is gran_attach, the pad reset's helper call is gran_reset",
@@ -94,7 +100,7 @@ e.uc.mem_map(0x38800000, 0x1000)
 e.uc.mem_map(0x58024000, 0x1000)
 e.uc.mem_map(0xC0000000, 0x90000)
 BLOCKMEM, LFOS = 0xC0000000, 0xC0000000 + 0x56800
-GRAN = LFOS + 0x440
+GRAN = BLOCKMEM + 0x56800 + 0x2D100              # master.c's block, behind comp.c's clipper
 EXT = 6                                       # bytes a CC slot: source, amount per mille (packed)
 e.w32(0x38800F70, BLOCKMEM)
 e.w32(0x38800F74, BLOCKMEM ^ 0x5052534D)
@@ -214,12 +220,12 @@ APPPADS = 0x24020088 + 0x1840
 SAMPLE = 0x2403A000
 
 
-def knobs(scan, pitchrnd, q=9):
+def knobs(scan, pitchrnd, q=9, mode=0, lvl=0):
     arr = 0x2403B000 + q * 0x40
-    e.uc.mem_write(arr, struct.pack("<HHIHHI", 0x1CA, 0, scan, 0x1CB, 0, pitchrnd))
+    e.uc.mem_write(arr, struct.pack("<HHIHHIHHIHHI", 0x1CA, 0, scan, 0x1CB, 0, pitchrnd, 0x1CD, 0, mode, 0x1CE, 0, lvl))
     store = APPPADS + (q >> 2) * 0xF0 + (q & 3) * 0x30
     e.w32(store + 4, arr)
-    e.uc.mem_write(store + 10, struct.pack("<H", 2))
+    e.uc.mem_write(store + 10, struct.pack("<H", 4))
     e.call("gran_pad_process", PAD, CTX)       # reads them for the next grains
 
 
@@ -279,7 +285,72 @@ slots((0.5, 0x1CB, 5))
 lfo_value(9, 0, 1.0)
 r = [start_at(40000)[2] for _ in range(50)]
 check("Pitch Rnd as a destination: knob 0 + LFO2 x 50 % -> up to half an octave", 2 ** -0.5 - 0.002 <= min(r) and max(r) <= 2 ** 0.5 + 0.002 and len(set(r)) > 40, (min(r), max(r)))
-knobs(250, 0, q=9)
+slots()
+semis = lambda r: round(12 * math.log2(r), 2)
+
+
+def spread(mode, reach, n=400):
+    knobs(0, reach, mode=mode)
+    return sorted({semis(start_at(40000)[2]) for _ in range(n)})
+
+
+check(f"Pitch Mode Semi, reach 100 %: whole semitones only, -12 .. +12 ({len(spread(1, 1000))} steps)",
+      spread(1, 1000) == [float(k) for k in range(-12, 13)], spread(1, 1000))
+check("Pitch Mode Oct: -12, 0, +12", spread(2, 1000) == [-12.0, 0.0, 12.0], spread(2, 1000))
+check("Pitch Mode 5th+Oct: -12, -7, 0, +7, +12", spread(3, 1000) == [-12.0, -7.0, 0.0, 7.0, 12.0], spread(3, 1000))
+check("Pitch Mode Major: 0, 4, 7, 12 either way", spread(4, 1000) == [-12.0, -7.0, -4.0, 0.0, 4.0, 7.0, 12.0], spread(4, 1000))
+check("Pitch Mode Minor: 0, 3, 7, 12 either way", spread(5, 1000) == [-12.0, -7.0, -3.0, 0.0, 3.0, 7.0, 12.0], spread(5, 1000))
+check("Pitch Mode Pent: 0, 3, 5, 7, 10, 12 either way",
+      spread(6, 1000) == [-12.0, -10.0, -7.0, -5.0, -3.0, 0.0, 3.0, 5.0, 7.0, 10.0, 12.0], spread(6, 1000))
+check("Pitch Mode Shimmr: up an octave or not at all", spread(7, 1000) == [0.0, 12.0], spread(7, 1000))
+check("Oct with a reach of 40 % (under half an octave): no grain jumps", spread(2, 400) == [0.0], spread(2, 400))
+knobs(0, 1000, mode=2)
+hits = [semis(start_at(40000)[2]) for _ in range(2000)]
+share = hits.count(0.0) / len(hits)
+check(f"Oct at 100 %: about half the grains as they are ({share:.0%}), the rest an octave either way", 0.45 < share < 0.55, share)
+knobs(0, 1000, mode=9)
+check("a Pitch Mode past the list's end reads as Free", len(spread(9, 1000, 100)) > 90)
+
+# Lvl Rnd: the grain's spare word, then the renderer's pan gains
+LEVEL = GRAIN + 0x3C
+
+
+def level_word(lvl):
+    knobs(0, 0, lvl=lvl)
+    start_at(40000)
+    w = e.r32(LEVEL) & 0xFFFFFFFF
+    return w >> 16, (w & 0xFFFF) / 32768
+
+
+check("Lvl Rnd 0: every grain tagged at full level", all(level_word(0) == (0x4C56, 32767 / 32768) for _ in range(20)))
+lv = [level_word(1000)[1] for _ in range(300)]
+check(f"Lvl Rnd 100 %: each grain its own level, silence to full ({min(lv):.3f} .. {max(lv):.3f})", min(lv) < 0.05 and max(lv) > 0.95, (min(lv), max(lv)))
+lv = [level_word(250)[1] for _ in range(300)]
+check(f"Lvl Rnd 25 %: never below 75 % ({min(lv):.3f})", 0.74 < min(lv) and max(lv) > 0.97, min(lv))
+knobs(0, 0, lvl=0)
+slots((1.0, 0x1CE, 5))
+lfo_value(9, 0, 0.5)
+lv = []
+for _ in range(200):
+    start_at(40000)
+    lv.append((e.r32(LEVEL) & 0xFFFF) / 32768)
+check(f"Lvl Rnd as a destination: knob 0 + LFO2 0.5 x 100 % -> levels between 50 % and full ({min(lv):.3f} .. {max(lv):.3f})", 0.49 < min(lv) < 0.6 and max(lv) > 0.95, (min(lv), max(lv)))
+slots()
+
+
+def pan_gain(sym, stock_fn, word, gain=0.8):
+    e.stub(stock_fn, lambda: e.uc.reg_write(UC_ARM_REG_S0, struct.unpack("<I", struct.pack("<f", gain))[0]))
+    e.w32(LEVEL, word)
+    e.uc.reg_write(UC_ARM_REG_R4, GRAIN)        # the renderer's grain register
+    e.call(sym)
+    return round(struct.unpack("<f", struct.pack("<I", e.uc.reg_read(UC_ARM_REG_S0) & 0xFFFFFFFF))[0], 4)
+
+
+check("left pan gain 0.8, grain level 0.5: 0.4", pan_gain("gran_gain_l", 0x08061730, 0x4C564000) == 0.4)
+check("right pan gain 0.8, grain level 0.25: 0.2", pan_gain("gran_gain_r", 0x08061778, 0x4C562000) == 0.2)
+check("a grain without the tag plays at its pan gain", pan_gain("gran_gain_l", 0x08061730, 0x12344000) == 0.8)
+
+knobs(250, 1000, q=9, mode=2, lvl=1000)
 e.uc.mem_write(PAD + 0x589, b"\x00")
 check("not a granular pad: no Scan, no detune", start_at(40000) == (40000, 0, 1.0, True))
 e.stub(0x08057AB0, grain_start)
@@ -402,7 +473,7 @@ fresh(0x0201)
 check("CC slots are per pad", start() == 24360, start())
 
 # ---- LFO 2 / 3 Depth: slot-list part from the class A pad's block, CC part per pad, both through gran_depth
-DEPTH = GRAN + 136 + 16 * 9 * 3 * EXT
+DEPTH = GRAN + 136 + 16 * 10 * 3 * EXT
 
 
 def gran_depth(q, k):

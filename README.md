@@ -10,9 +10,9 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JBGRAN 6 (granular modulation, LFO Depth)
+## This fork: JBGRAN 7 (granular modulation, LFO Depth)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 6`.
+A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 7`.
 Everything in JOEBOX 1 is still there.
 
 - **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
@@ -25,26 +25,30 @@ Everything in JOEBOX 1 is still there.
   each grain's read position; Pan Rnd its random place in the stereo field; Scatter is not random: it delays every
   grain of a cycle but the first, and only while Density is under 50 % (above that there is no gap and the engine
   ignores it).
-- **Scan and Pitch Rnd** (JBGRAN 6), two knobs of the mod's own on the Gran tab, both modulation destinations:
-  Scan moves where each grain reads, 0..100 % of the sample, wrapping round it (an LFO on it sweeps the grains
-  through the sample; with Speed at 0, Scan alone says where they read). Pitch Rnd detunes each grain at random,
-  up to an octave either way at 100 % (8 % is about a semitone).
+- **Scan and Pitch Rnd** (JBGRAN 6), knobs of the mod's own, both modulation destinations: Scan moves where each
+  grain reads, 0..100 % of the sample, wrapping round it (an LFO on it sweeps the grains through the sample; with
+  Speed at 0, Scan alone says where they read). Pitch Rnd detunes each grain at random, up to an octave either way
+  at 100 % (8 % is about a semitone).
+- **Pitch Mode and Lvl Rnd** (JBGRAN 7). Pitch Mode snaps Pitch Rnd's detune to a set: Free (as before), Semi, Oct,
+  5th+Oct, Major, Minor, Pent (minor pentatonic), Shimmr (an octave up or nothing). Pitch Rnd stays the reach: Oct
+  at 100 % leaves about half the grains as they are and throws the rest an octave either way; under 50 % nothing
+  reaches the octave. Lvl Rnd gives each grain its own random level, down to silence at 100 % (a destination too).
 - **Granular pad pages.** LFO tab: LFO 1's Waveform, Rate, Depth (its Beat Sync and Trig are off the page and keep
   their values), then all of LFO 2: `2 Wave`, `2 Rate`, `2 Depth`, `2 Trig`, `2 Offset`. Gran tab: the six grain
-  knobs, then `Scan`, `Pitch Rnd`. Conf tab: `Insert` and `Input` under Saturation (the per-pad insert effect
+  knobs, then `Pitch Rnd`, `Pitch Mode`. Pos tab: its six, then `Scan`, `Lvl Rnd`. Conf tab: `Insert` and `Input` under Saturation (the per-pad insert effect
   and the live input, as on the other pads: Granular pads run the same pad block, so they already took them; only
-  the rows were missing). Pos tab: stock. Eight knobs a page is all the screen has, so LFO 3 has no knobs
+  the rows were missing). Eight knobs a page is all the screen has, so LFO 3 has no knobs
   on these pads; as a source it runs on its defaults (Random, 1/4, Retrig).
 - **LFO 2 / 3 Depth** (`2 Depth`, `3 Depth`, 0..100 %, default 100 % = as before): on the LFO tab after the stock
   LFO's knobs (Granular pads: 2 Depth only, on the LFO tab). Both are modulation destinations too, so a CC can ride an LFO's
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-6.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-7.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN ran on a unit; the MIDI, CC and duck
 sources (JBGRAN 2) and Depth (JBGRAN 3) have not been on hardware yet. JBGRAN 4
-only moved the Granular pads' knobs; JBGRAN 5's three new destinations and JBGRAN 6's Scan /
-Pitch Rnd are untested on hardware too. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
+only moved the Granular pads' knobs; JBGRAN 5's three new destinations and JBGRAN 6 / 7's knobs
+are untested on hardware too. Bank 1 is now all but full (under 400 bytes free): anything more needs room made first. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
 `patches/gran.py`, `test_gran.py`, `test_lfo.py`.
 
 ## What it adds (JOEBOX 1)
