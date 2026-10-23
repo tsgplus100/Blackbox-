@@ -10,9 +10,9 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JBGRAN 7 (granular modulation, LFO Depth)
+## This fork: JBGRAN 8 (granular modulation, LFO Depth)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 7`.
+A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 8`.
 Everything in JOEBOX 1 is still there.
 
 - **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
@@ -33,6 +33,9 @@ Everything in JOEBOX 1 is still there.
   5th+Oct, Major, Minor, Pent (minor pentatonic), Shimmr (an octave up or nothing). Pitch Rnd stays the reach: Oct
   at 100 % leaves about half the grains as they are and throws the rest an octave either way; under 50 % nothing
   reaches the octave. Lvl Rnd gives each grain its own random level, down to silence at 100 % (a destination too).
+- **Power-on screen** (JBGRAN 8): SYEN, in italic, built of the screen font's `#` over six lines (312 x 96
+  pixels), instead of "blackbox / by 1010music / 3.1.9". Error messages (no card, a file missing) still show over
+  its lower lines. `src/splash.c`.
 - **Granular pad pages.** LFO tab: LFO 1's Waveform, Rate, Depth (its Beat Sync and Trig are off the page and keep
   their values), then all of LFO 2: `2 Wave`, `2 Rate`, `2 Depth`, `2 Trig`, `2 Offset`. Gran tab: the six grain
   knobs, then `Pitch Rnd`, `Pitch Mode`. Pos tab: its six, then `Scan`, `Lvl Rnd`. Conf tab: `Insert` and `Input` under Saturation (the per-pad insert effect
@@ -44,11 +47,11 @@ Everything in JOEBOX 1 is still there.
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-7.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-8.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN ran on a unit; the MIDI, CC and duck
 sources (JBGRAN 2) and Depth (JBGRAN 3) have not been on hardware yet. JBGRAN 4
 only moved the Granular pads' knobs; JBGRAN 5's three new destinations and JBGRAN 6 / 7's knobs
-are untested on hardware too. Bank 1 is now all but full (under 400 bytes free): anything more needs room made first. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
+are untested on hardware too. Bank 1 is now all but full (about 120 bytes free): anything more needs room made first. Keep your stock file (and JOEBOX 1's two files) to go back. Code: `src/gran.c`, `src/lfo.c`,
 `patches/gran.py`, `test_gran.py`, `test_lfo.py`.
 
 ## What it adds (JOEBOX 1)

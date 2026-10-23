@@ -56,3 +56,7 @@ PATCHES = [
 from gran import PATCHES as _GRAN  # noqa: E402
 
 PATCHES += _GRAN
+
+from splash import PATCHES as _SPLASH  # noqa: E402
+
+PATCHES += _SPLASH
