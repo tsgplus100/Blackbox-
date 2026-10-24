@@ -39,14 +39,14 @@ PATCHES = [
     # 3.1.C..F missed it, so a sample pad's store filled up at 64 and LFO 3's Rate / Trig / Offset had nowhere to live
     # (the report: those three knobs do not move).
     (0x080949F0, bytes.fromhex("4021"), bytes.fromhex("6021")),
-    hook(0x080B8844, 0x080B8724, "lfo_tabs"),
-    hook(0x080B8BCC, 0x080B8724, "lfo_tabs"),
+    hook(0x080B8844, 0x080B8724, "lfo_tabs_b"),
+    hook(0x080B8BCC, 0x080B8724, "lfo_tabs_b"),
     (0x080EFCF0, bytes(16), struct.pack("<8H", *range(0x1A9, 0x1B1))),   # Sample pads, page 3
     (0x080EFB88, bytes(16), struct.pack("<8H", *range(0x1A9, 0x1B1))),   # Multisample pads, page 3
-    (0x080EF948 + 3 * 0x48, bytes(16), struct.pack("<8H", *range(0x1A9, 0x1B1))),   # Clip pads, page 3
+    # (Clip pads' page 3 is Stretch's since JBGRAN 11: patches/stretch.py)
     (0x080EF7E0 + 3 * 0x48, bytes(16), struct.pack("<8H", *range(0x1A9, 0x1B1))),   # Slicer pads, page 3
     # the same pages exist a second time for pad cells of class type 0x4c (FUN_08098d40): Sample, Clip, Slicer there too
-    *[(base + 3 * 0x48, bytes(16), struct.pack("<8H", *range(0x1A9, 0x1B1))) for base in (0x080EF3A8, 0x080EF240, 0x080EF0D8)],
+    *[(base + 3 * 0x48, bytes(16), struct.pack("<8H", *range(0x1A9, 0x1B1))) for base in (0x080EF3A8, 0x080EF0D8)],
     hook(0x080943B4, 0x08093EF6, "lfo_defaults"),   # ... and that cell type's defaults (its last add is 0xdc = 0 as well)
     # Clip / Slicer pads (engine class B): ENV, LFO2, LFO3 as sources
     hook(0x080685C4, 0x08067018, "env_mod_setup_b"),

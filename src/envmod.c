@@ -113,9 +113,15 @@ static const struct {
     {200, 0x448},
 };
 
+void stretch_slot(uint8_t *pad, unsigned target, unsigned code, unsigned slot, float amount);   /* stretch.c */
+
 void env_mod_setup_b(uint8_t *pad, uint8_t *cmd)
 {
     uint16_t source = *(uint16_t *)(cmd + 0x14), target = (uint16_t)*(uint32_t *)(cmd + 0xc);
+    if (target == 0x193 || target == 0x195) {    /* Stretch's Grain / Jitter: stretch.c reads them itself */
+        stretch_slot(pad, target, source, *(uint32_t *)(cmd + 0x10) & 0xffff, (float)*(int16_t *)(cmd + 0x16) * 0.001f);
+        return;
+    }
     if (source != SRC_ENV && source != SRC_LFO2 && source != SRC_LFO3) {
         fw_setup_b(pad, cmd);
         return;

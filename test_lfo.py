@@ -17,6 +17,15 @@ e = Emu(IMG, "out/cave.elf")
 img = open(IMG, "rb").read()
 stock = open("firmware/BLACKBOX-3.1.9.bin", "rb").read()
 
+
+def branch_to(at):
+    """where the BL / B.W at `at` in the image goes"""
+    h1, h2 = struct.unpack("<HH", img[at - BASE:at - BASE + 4])
+    s = (h1 >> 10) & 1
+    i1, i2 = 1 - (((h2 >> 13) & 1) ^ s), 1 - (((h2 >> 11) & 1) ^ s)
+    off = (s << 24) | (i1 << 23) | (i2 << 22) | ((h1 & 0x3FF) << 12) | ((h2 & 0x7FF) << 1)
+    return (at + 4 + off - (s << 25)) | 1
+
 ENGINE, PAD, PARAM, CMD, VT = 0x24040000, 0x24030000, 0x24031000, 0x24032000, 0x24033000
 STATE = 0x2405FF70
 VALUE_OFF = [0xD604, 0xD668, 0xD6CC, 0xD730]
@@ -62,26 +71,28 @@ check("registered per LFO: Wave (12), Rate (15 synced lengths), Trig (Free, Retr
       [(l[0], l[1], l[2]) for l in lists] == [(0x1A9, "2 Wave:", WAVES), (0x1AA, "2 Rate:", RATES), (0x1AB, "2 Trig:", ["Free", "Retrig", "Once"]),
                                               (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"]),
                                               (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"]),
-                                              (0x1CF, "Speed:", ["x1/4", "x1/3", "x1/2", "x2/3", "x3/4", "x1", "x3/2", "x2", "x3", "x4"])], lists)
+                                              (0x1CF, "Speed:", ["x1/4", "x1/3", "x1/2", "x2/3", "x3/4", "x1", "x3/2", "x2", "x3", "x4"]),
+                                              (0x192, "Mode:", ["Repitch", "Stretch"]), (0x196, "Freeze:", ["Off", "On"])], lists)
 check("...and Offset and Depth 0..100 % (Depth: 0x1c8 / 0x1c9); then gran.c's Scan and Pitch Rnd", [(n[0], n[1], n[2], n[3]) for n in nums] ==
       [(0x1AC, "2 Offset:", 0, 1000), (0x1C8, "2 Depth:", 0, 1000), (0x1B0, "3 Offset:", 0, 1000), (0x1C9, "3 Depth:", 0, 1000),
-       (0x1CA, "Scan:", 0, 1000), (0x1CB, "Pitch Rnd:", 0, 1000), (0x1CE, "Lvl Rnd:", 0, 1000)], nums)
+       (0x1CA, "Scan:", 0, 1000), (0x1CB, "Pitch Rnd:", 0, 1000), (0x1CE, "Lvl Rnd:", 0, 1000), (0x193, "Grain:", 0, 1000), (0x195, "Jitter:", 0, 1000)], nums)
 check(f"the whole image fits flash bank 1: {len(img)} bytes of at most {0x08100000 - BASE} (the installer refuses a longer one)", len(img) <= 0x08100000 - BASE, len(img))
-check("fifteen distinct xml names (Pitch Mode is gran.c's list, Speed stretch.c's)", len({l[3] for l in lists} | {n[4] for n in nums}) == 15)
+check("nineteen distinct xml names (Pitch Mode is gran.c's list; Speed, Mode, Grain, Jitter, Freeze stretch.c's)", len({l[3] for l in lists} | {n[4] for n in nums}) == 19)
 e.stub(0x08093EF6, lambda: added.append((e.arg(1), e.arg(2))))
 e.call("lfo_defaults", 0x24073000, 0xDC, 0)
 check("pad defaults: stock's last entry, then LFO 2 = Sine, 1 bar, Free; LFO 3 = Random, 1/4, Retrig",
       added[:9] == [(0xDC, 0), (0x1A9, 4), (0x1AA, 5), (0x1AB, 0), (0x1AC, 0), (0x1AD, 8), (0x1AE, 8), (0x1AF, 1), (0x1B0, 0)], added)
-check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %, Scan, Pitch Rnd, Pitch Mode, Lvl Rnd at 0, Speed x1",
+check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %, Scan, Pitch Rnd, Pitch Mode, Lvl Rnd at 0, Speed x1; Stretch: Repitch, Grain 40 %, Jitter 0, Freeze Off",
       added[9:] == [(0x1B6, 0), (0x1B7, 0), (0x1B8, 0), (0x1B9, 330), (0x1BA, 750), (0x1BB, 500), (0x1BC, 350), (0x1BD, 250), (0x1BE, 500),
-                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000), (0x1CA, 0), (0x1CB, 0), (0x1CD, 0), (0x1CE, 0), (0x1CF, 5)], added[9:])
-check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 89): both places that size one",
+                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000), (0x1CA, 0), (0x1CB, 0), (0x1CD, 0), (0x1CE, 0), (0x1CF, 5),
+                    (0x192, 0), (0x193, 400), (0x195, 0), (0x196, 0)], added[9:])
+check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 93): both places that size one",
       img[0x08093F26 - BASE:0x08093F28 - BASE] == bytes.fromhex("6021") and img[0x080949F0 - BASE:0x080949F2 - BASE] == bytes.fromhex("6021"))
 check("page 3 of the Sample and Multisample pad pages lists the eight knobs",
       words(img, 0x080EFCF0, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] and words(img, 0x080EFB88, 9, "H") == list(range(0x1A9, 0x1B1)) + [0])
-check("...and so does page 3 of the Clip and Slicer pad pages", words(img, 0x080EF948 + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] and words(img, 0x080EF7E0 + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0])
+check("...and so does page 3 of the Slicer pad pages (the Clip pad's is Stretch's: test_stretch.py)", words(img, 0x080EF7E0 + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0])
 check("the second copy of the pad pages (cells of class type 0x4c) has them too, and its defaults are hooked",
-      all(words(img, b + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] for b in (0x080EF3A8, 0x080EF240, 0x080EF0D8))
+      all(words(img, b + 3 * 0x48, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] for b in (0x080EF3A8, 0x080EF0D8))
       and img[0x080943B4 - BASE:0x080943B8 - BASE] != stock[0x080943B4 - BASE:0x080943B8 - BASE] and img[0x0809423C - BASE:0x08094240 - BASE] != stock[0x0809423C - BASE:0x08094240 - BASE])
 check("Granular pads' page 3 is still their own six grain knobs (gran.c adds Pitch Rnd / Pitch Mode behind them)",
       words(img, 0x080EF510 + 3 * 0x48, 6, "H") == words(stock, 0x080EF510 + 3 * 0x48, 6, "H") and words(stock, 0x080EF510 + 3 * 0x48, 7, "H")[5:] != [0, 0]
@@ -94,16 +105,24 @@ e.stub(0x080B8724, lambda: tabs.append(("bar", e.arg(1))))
 e.stub(0x080A3DEC, lambda: tabs.append(("label", e.arg(0) - VIEW, e.cstr(e.arg(1)))))
 
 
-def pick(bar):
+def pick(bar, mode=0):
     tabs.clear()
-    e.call("lfo_tabs", VIEW, bar)
+    e.call("lfo_tabs", VIEW, bar, mode)
     return list(tabs)
 
 
-check("Sample, Clip and Slicer pads (bar 0): get the five-tab bar, fourth tab labelled LFO+", pick(0) == [("label", 0x106D8, "LFO+"), ("bar", 1)], pick(0))
-check("Multisample pad (bar 2): the same", pick(2) == [("label", 0x106D8, "LFO+"), ("bar", 1)], pick(2))
-check("Granular pad (bar 1): its five-tab bar, the fourth tab says Gran again", pick(1) == [("label", 0x106D8, "Gran"), ("bar", 1)], pick(1))
-check("both stock calls that pick the bar go through lfo_tabs", img[0x080B8844 - BASE:0x080B8848 - BASE] != stock[0x080B8844 - BASE:0x080B8848 - BASE] and img[0x080B8BCC - BASE:0x080B8BD0 - BASE] != stock[0x080B8BCC - BASE:0x080B8BD0 - BASE])
+check("Sample and Slicer pads (bar 0, Pad Mode 0 / 2): get the five-tab bar, fourth tab labelled LFO+",
+      pick(0, 0) == [("label", 0x106D8, "LFO+"), ("bar", 1)] and pick(0, 2) == [("label", 0x106D8, "LFO+"), ("bar", 1)], pick(0))
+check("Clip pad (Pad Mode 1): the fourth tab is Strch", pick(0, 1) == [("label", 0x106D8, "Strch"), ("bar", 1)], pick(0, 1))
+check("Multisample pad (bar 2): LFO+", pick(2, 5) == [("label", 0x106D8, "LFO+"), ("bar", 1)], pick(2, 5))
+check("Granular pad (bar 1): its five-tab bar, the fourth tab says Gran again", pick(1, 3) == [("label", 0x106D8, "Gran"), ("bar", 1)], pick(1, 3))
+check("both stock calls that pick the bar go through lfo_tabs_b, which hands over the Pad Mode in r5",
+      branch_to(0x080B8844) == e.sym["lfo_tabs_b"] | 1 and branch_to(0x080B8BCC) == e.sym["lfo_tabs_b"] | 1
+      and img[(e.sym["lfo_tabs_b"] & ~1) - BASE:(e.sym["lfo_tabs_b"] & ~1) - BASE + 2] == bytes.fromhex("2a46"),
+      (hex(branch_to(0x080B8844)), hex(e.sym["lfo_tabs_b"])))
+check("...both callers hold the Pad Mode (setting 0x8b) in r5 there",
+      stock[0x080B8824 - BASE:0x080B8826 - BASE] == bytes.fromhex("0546") and stock[0x080B8BAA - BASE:0x080B8BAC - BASE] == bytes.fromhex("0546"))
+check("both stock calls that pick the bar are replaced", img[0x080B8844 - BASE:0x080B8848 - BASE] != stock[0x080B8844 - BASE:0x080B8848 - BASE] and img[0x080B8BCC - BASE:0x080B8BD0 - BASE] != stock[0x080B8BCC - BASE:0x080B8BD0 - BASE])
 
 # ---- triggers: the voice-start thunk sets the pad's bit
 def voice_start(sym, original, pad_id):

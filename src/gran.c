@@ -181,10 +181,11 @@ static int target_index(unsigned target)
 }
 
 /* The MOD page's parameter list: stock's 28 (0x080f12bc), then ours. */
-const uint16_t gran_mod_targets[38] = {
+const uint16_t gran_mod_targets[40] = {
     4, 0x62, 0x5c, 0x8f, 0x90, 0x91, 0x92, 0x4e, 0xa2, 0xc8, 0x11, 0x33, 0x32, 0x38, 0x37, 0x3a,
     0x5d, 0xb, 9, 0xa, 0x3c, 0x3e, 0x40, 0x32, 0x33, 0x38, 0x37, 0x3a,
     T_SIZE, T_DENSITY, T_DEPTH, T_DEPTH + 1, T_WINDOW, T_SCATTER, T_PANRND, T_SCAN, T_PITCHRND, T_LVLRND,
+    0x193, 0x195,                /* Clip Stretch's Grain and Jitter (stretch.c) */
 };
 
 /* A slot's source, as envmod.c and FUN_0805623c find it: an object whose value is the float at +4. */
@@ -546,10 +547,14 @@ void gran_attach(uint8_t *pad, const uint8_t *source, unsigned target, unsigned 
     fw_attach(pad, source, target, slot, amount);
 }
 
+void stretch_attach(uint8_t *pad, const uint8_t *source, unsigned target, unsigned slot, float amount);
+void stretch_forget(const uint8_t *pad);         /* stretch.c: Clip Stretch's Grain / Jitter */
+
 /* Replaces the class B pad's vtable +0x40 (FUN_08063df0 @0x080d08d0). */
 void gran_attach_b(uint8_t *pad, const uint8_t *source, unsigned target, unsigned slot, float amount)
 {
     keep(pad, source, target, slot, amount);
+    stretch_attach(pad, source, target, slot, amount);
     fw_attach_b(pad, source, target, slot, amount);
 }
 
@@ -576,5 +581,7 @@ void gran_reset(uint8_t *obj)
 void gran_reset_b(uint8_t *obj)
 {
     forget(obj - 0x440, VT_B);
+    if (*(const uint32_t *)(obj - 0x440) == VT_B)
+        stretch_forget(obj - 0x440);
     fw_reset_obj(obj);
 }

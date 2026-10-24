@@ -614,10 +614,16 @@ typedef float *(*buf_mono_fn)(void *buf);
 #define CLIP_SOURCE 0x24         /* pad -> its sample */
 #define CLIP_BACK   3            /* the fetch starts this many samples before the position */
 
+int stretch_read(float rate, uint8_t *pad, int32_t pos, int n, int *used, float *frac, void *scratch, void *out,
+                 void **result);         /* stretch.c: a Clip pad in Stretch mode */
+
 /* filter = the reading voice's filter object, put in the register stock leaves unused (clip_read_b, filter_thunk.S) */
 int clip_read(float rate, uint8_t *pad, uint8_t *filter, int32_t pos, int32_t pos_hi, int n, int *used, float *frac,
               void *scratch, void *out, void **result)
 {
+    int st = stretch_read(rate, pad, pos, n, used, frac, scratch, out, result);
+    if (st >= 0)
+        return st;
     const struct machine *m = pad_machine(pad);
     if (!m || !(rate > 0.0f))
         return fw_clip_read(rate, pad, filter, pos, pos_hi, n, used, frac, scratch, out, result);

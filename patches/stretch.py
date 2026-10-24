@@ -1,4 +1,4 @@
-"""Clip pads: Speed (src/stretch.c). Loaded by duck.py, like gran.py."""
+"""Clip pads: Speed and Stretch (src/stretch.c). Loaded by duck.py, like gran.py."""
 import os
 import struct
 
@@ -28,4 +28,10 @@ PATCHES = [
     # Speed on the Clip pads' Pos page, after Loop Mode / Beat Count / Quant Size / Sync (both copies)
     (0x080EF990 + 8, ids(0), ids(0x1CF)),
     (0x080EF288 + 8, ids(0), ids(0x1CF)),
+    # the reader: filter.c's clip_read (filter.py's hook @0x08066622) asks stretch_read first
+    # LFO page as the Granular pad's: Waveform / Rate / Depth (Beat Sync and Trig leave the page, keeping their
+    # values), then LFO 2's five (both copies)
+    *[(page, ids(8, 9, 0xB, 0xC, 0xD, 0, 0, 0), ids(8, 9, 0xB, 0x1A9, 0x1AA, 0x1C8, 0x1AB, 0x1AC)) for page in (0x080EF9D8, 0x080EF2D0)],
+    # page 3, the "Strch" tab (lfo.c's lfo_tabs): Mode, Grain, Jitter, Freeze, then LFO 3's Wave / Rate / Depth / Trig
+    *[(page, bytes(16), ids(0x192, 0x193, 0x195, 0x196, 0x1AD, 0x1AE, 0x1C9, 0x1AF)) for page in (0x080EFA20, 0x080EF318)],
 ]

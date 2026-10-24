@@ -8,7 +8,7 @@ from thumb import ROOT, bl, symbols, word
 
 sym = symbols(os.path.join(ROOT, "out", "cave.elf"))
 TARGETS = sym["gran_mod_targets"]
-N_STOCK, N_OURS = 28, 38
+N_STOCK, N_OURS = 28, 40
 
 
 def hook(at, stock, name):
@@ -31,7 +31,7 @@ PATCHES = [
     hook(0x08068556, 0x08076080, "gran_reset_b"),
     # UI: the pad screen's list of parameters that have a MOD page (FUN_080b8898, FUN_080b892c)
     (0x080B8924, word(0x080F12BC), word(TARGETS)),
-    (0x080B88D6, bytes.fromhex("03f13801"), bytes.fromhex("03f1") + bytes([2 * N_OURS]) + bytes.fromhex("01")),  # add.w r1,r3,#0x38 -> #0x4c
+    (0x080B88D6, bytes.fromhex("03f13801"), bytes.fromhex("03f1") + bytes([2 * N_OURS]) + bytes.fromhex("01")),  # add.w r1,r3,#0x38 -> #0x50
     (0x080B8BF8, word(0x080F12BC), word(TARGETS)),
     (0x080B896A, bytes([N_STOCK, 0x22]), bytes([N_OURS, 0x22])),   # movs r2,#28 -> #30
     (0x080B8980, bytes([N_STOCK, 0x22]), bytes([N_OURS, 0x22])),
@@ -46,10 +46,10 @@ PATCHES = [
     # Lvl Rnd: the grain renderer's two pan-gain calls
     hook(0x08057EA2, 0x08061730, "gran_gain_l"),
     hook(0x08057EAE, 0x08061778, "gran_gain_r"),
-    # LFO 2 / 3 Depth (0x1c8, 0x1c9): after the stock LFO's five on the LFO page of Sample, Multisample, Clip and
-    # Slicer pads (and the second copy's Sample, Clip, Slicer). Granular pads: 2 Depth is on their LFO page, above.
+    # LFO 2 / 3 Depth (0x1c8, 0x1c9): after the stock LFO's five on the LFO page of Sample, Multisample and Slicer
+    # pads (and the second copy's Sample, Slicer); Clip pads: patches/stretch.py. Granular pads: 2 Depth is on their LFO page, above.
     *[(page + 10, ids(0, 0), ids(0x1C8, 0x1C9)) for page in
-      (0x080EFCA8, 0x080EFB40, 0x080EF9D8, 0x080EF870, 0x080EF438, 0x080EF2D0, 0x080EF168)],
+      (0x080EFCA8, 0x080EFB40, 0x080EF870, 0x080EF438, 0x080EF168)],
     # Conf page (a list): Insert and Input right under Saturation, as filter.py puts them on the other pads. Both run
     # in the class A pad's block (insert.c), which Granular pads share. No Fidelity: grains have their own reader.
     *[(page, ids(0xDB, 0x93, 0x95, 0x62, 0xC4, 0x6A, 0xD0, 0xF5, 0, 0), ids(0xDB, 0x1B6, 0x1C7, 0x93, 0x95, 0x62, 0xC4, 0x6A, 0xD0, 0xF5))

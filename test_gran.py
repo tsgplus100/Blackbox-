@@ -51,15 +51,15 @@ def rf(a):
 
 # ---- the image
 T = e.sym["gran_mod_targets"]
-OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F, 0x1CA, 0x1CB, 0x1CE]
-check("MOD page list: stock's 28, then Grain Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd, Scan, Pitch Rnd",
-      words(img, T, 38) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 38))
-check("...both users of the list point at it, the loop runs to its end and both counts say 38",
+OURS = [0x17C, 0x180, 0x1C8, 0x1C9, 0x5B, 0x17E, 0x17F, 0x1CA, 0x1CB, 0x1CE, 0x193, 0x195]
+check("MOD page list: stock's 28, then Grain Size, Density, LFO 2 / 3 Depth, Window, Scatter, Pan Rnd, Scan, Pitch Rnd, Lvl Rnd, Clip Grain, Jitter",
+      words(img, T, 40) == words(stock, 0x080F12BC, 28) + OURS, words(img, T, 40))
+check("...both users of the list point at it, the loop runs to its end and both counts say 40",
       struct.unpack("<II", img[0x080B8924 - BASE:0x080B8928 - BASE] + img[0x080B8BF8 - BASE:0x080B8BFC - BASE]) == (T, T)
-      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f14c01")
-      and img[0x080B896A - BASE] == 38 and img[0x080B8980 - BASE] == 38)
-for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Clip", 0x080EF9D8, 5), ("Slicer", 0x080EF870, 5),
-                         ("second-copy Sample", 0x080EF438, 5), ("second-copy Clip", 0x080EF2D0, 5), ("second-copy Slicer", 0x080EF168, 5)):
+      and img[0x080B88D6 - BASE:0x080B88DA - BASE] == bytes.fromhex("03f15001")
+      and img[0x080B896A - BASE] == 40 and img[0x080B8980 - BASE] == 40)
+for name, page, have in (("Sample", 0x080EFCA8, 5), ("Multisample", 0x080EFB40, 5), ("Slicer", 0x080EF870, 5),
+                         ("second-copy Sample", 0x080EF438, 5), ("second-copy Slicer", 0x080EF168, 5)):
     got = words(img, page, have + 3)
     check(f"{name} page: its own {have} knobs, then 2 Depth and 3 Depth, then the end",
           got[:have] == words(stock, page, have) and words(stock, page, have + 3)[have:] == [0, 0, 0] and got[have:] == [0x1C8, 0x1C9, 0], got)

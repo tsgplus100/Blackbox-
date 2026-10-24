@@ -100,11 +100,12 @@ void lfo_defaults(void *store, int param, int value)
 
 #define VIEW_TAB_NEW 0x106d8     /* bar 1's fourth tab button: 0x103b8 (bar 0's last) + 0x3c0 - 0xa0 */
 
-/* Replaces the two calls that pick the tab bar (bl FUN_080b8724 @0x080b8844, 0x080b8bcc). */
-void lfo_tabs(uint8_t *view, int bar)
+/* Replaces the two calls that pick the tab bar (bl FUN_080b8724 @0x080b8844, 0x080b8bcc), through lfo_tabs_b
+   (gran_thunk.S), which hands over the Pad Mode both callers have just looked up (0x8b: 1 Clip, 3 Granular). */
+void lfo_tabs(uint8_t *view, int bar, int mode)
 {
     int ours = bar != 1;         /* 1 = a granular pad, whose fourth tab is its own */
-    fw_label(view + VIEW_TAB_NEW, ours ? "LFO+" : (const char *)0x080cf748 /* "Gran" */);
+    fw_label(view + VIEW_TAB_NEW, !ours ? (const char *)0x080cf748 /* "Gran" */ : mode == 1 ? "Strch" : "LFO+");
     fw_tabs(view, 1);
 }
 

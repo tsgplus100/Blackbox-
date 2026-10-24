@@ -31,3 +31,14 @@
 
     pan_gain gran_gain_l, 0x08061730
     pan_gain gran_gain_r, 0x08061778
+
+/*
+ * lfo.c's lfo_tabs replaces the two calls that pick the pad screen's tab bar (@0x080b8844, 0x080b8bcc); both callers
+ * hold the Pad Mode (setting 0x8b) in r5 there. A Clip pad's fourth tab is Stretch's (stretch.c), not LFO+.
+ */
+    .global lfo_tabs_b
+    .thumb_func
+    .type lfo_tabs_b, %function
+lfo_tabs_b:
+    mov     r2, r5
+    b.w     lfo_tabs
