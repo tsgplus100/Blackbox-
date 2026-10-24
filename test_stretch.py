@@ -132,9 +132,14 @@ check("Clip page 3 (Strch): Mode, Grain, Jitter, Freeze, LFO 3 Wave, Rate, Depth
       all(words(img, p, 8) == [0x192, 0x193, 0x195, 0x196, 0x1AD, 0x1AE, 0x1C9, 0x1AF] for p in (0x080EFA20, 0x080EF318)))
 check("Slicer page 3 keeps LFO+", words(img, 0x080EF7E0 + 3 * 0x48, 8) == list(range(0x1A9, 0x1B1)))
 
+check("stock hands FUN_08066454 (the layer render, which reads through @0x08066622) segment pad + 0x30 + k * 0x70: "
+      "rsb r2, fp, fp, lsl #3; add.w r2, r6, r2, lsl #4; adds r2, #0x30, with r0 = r6 the pad",
+      stock[0x08066888 - BASE:0x0806689E - BASE].hex() == "cbebcb020693099b06eb02128df84c40059314ab3032"
+      and stock[0x08066880 - BASE:0x08066882 - BASE].hex() == "3046", stock[0x08066888 - BASE:0x0806689E - BASE].hex())
 SRC, SCR, OUTB, USED, FRAC, RES = 0x24040000, 0x24034000, 0x24036000, 0x24031400, 0x24031404, 0x24031408
 SCAP, SL, SR, OL, OR = 600, 0x24034100, 0x24035100, 0x24036100, 0x24037100
-LAYER = PAD + 0x260
+SEG = PAD + 0x30                                  # the pad's first read segment (pad +0x30 + k * 0x70)
+FILTER_A, FILTER_B = PAD + 0x260 + 0x14C, PAD + 0x670 + 0x14C   # clip_read_b's filter: the reading layer + 0x14c
 e.uc.mem_write(PAD, bytes(0x800))
 e.w32(PAD + 0x18, 0x0102)
 e.w32(PAD + 0x24, SRC)
@@ -168,12 +173,12 @@ def settings(**kv):
     e.uc.mem_write(store + 10, struct.pack("<H", len(kv)))
 
 
-def read(rate, pos, n, frac=0.0, tempo=1.0, layer=LAYER):
+def read(rate, pos, n, frac=0.0, tempo=1.0, layer=SEG, filt=FILTER_A):
     e.uc.mem_write(layer + 0x18, struct.pack("<f", tempo))
     e.uc.mem_write(layer + 0x1C, struct.pack("<f", frac))
     e.uc.reg_write(UC_ARM_REG_S0, struct.unpack("<I", struct.pack("<f", rate))[0])
-    e.uc.mem_write(STACK, struct.pack("<IIII", layer + 0x1C, SCR, OUTB, RES))
-    e.call("stretch_read", PAD, pos, n, USED)
+    e.uc.mem_write(STACK, struct.pack("<IIIII", USED, layer + 0x1C, SCR, OUTB, RES))
+    e.call("stretch_read", PAD, filt, pos, n)
     r = e.uc.reg_read(ARG0)
     r = r - (1 << 32) if r & 0x80000000 else r
     out = np.frombuffer(bytes(e.uc.mem_read(OL, 4 * n)), np.float32).copy()
@@ -192,7 +197,7 @@ def stock_advance(rate, frac, n):
     return idx, float(f)
 
 
-def play(rate, tempo, blocks, n=128, pos=1000, layer=LAYER):
+def play(rate, tempo, blocks, n=128, pos=1000, layer=SEG):
     """blocks of n frames, the position advancing as stock's would; the output and the positions"""
     outs, frac, poss = [], 0.0, []
     for _ in range(blocks):
@@ -211,6 +216,12 @@ source["l"] = np.ones(200000, np.float32)
 check("Mode Repitch: not stretch_read's to read (-1, the reader goes on as before)", read(1.0, 1000, 128)[0] == -1)
 settings()
 check("a store without Mode (an older preset): Repitch", read(1.0, 1000, 128)[0] == -1)
+settings(mode=1)
+check("a pointer that is not one of the pad's five segments (the layer itself, a sixth): left to stock",
+      read(1.0, 1000, 128, layer=PAD + 0x260)[0] == -1 and read(1.0, 1000, 128, layer=PAD + 0x30 + 5 * 0x70)[0] == -1)
+check("...the first and the fifth are taken", read(1.0, 1000, 128)[0] == 1 and read(1.0, 1000, 128, layer=PAD + 0x30 + 4 * 0x70)[0] == 1)
+settings(mode=3)
+check("a Mode past the list's end: stock", read(1.0, 1000, 128)[0] == -1)
 
 settings(mode=1, grain=400, jitter=0)
 out, poss, _ = play(0.5, 0.5, 40)
@@ -242,8 +253,15 @@ pure = float(sp[np.abs(fb - hz) < 30].sum() / sp.sum())
 check("...a clean tone: 95 % of the energy within 30 Hz of 441 (WSOLA keeps the grains in phase)", pure > 0.95, pure)
 rms = float(np.sqrt(np.mean(out[2000:] ** 2)))
 check("...at the source's level (RMS 0.707, within 10 %)", 0.64 < rms < 0.78, rms)
-out, poss, end = play(2.0, 2.0, 30, pos=2000, layer=PAD + 0x670)
-check("x2 on the other layer: pitch kept, playhead twice as fast", abs(freq(out[1000:]) - hz) < 6 and end - 2000 == 7680, (freq(out[1000:]), end))
+settings(mode=2, grain=400, jitter=0)
+out2, poss, end = play(0.5, 0.5, 60, pos=2000)
+sp2 = np.abs(np.fft.rfft(out2[2000:] * np.hanning(len(out2) - 2000))) ** 2
+pure2 = float(sp2[np.abs(fb - hz) < 30].sum() / sp2.sum())
+check("Texture (no lining up): the grains are heard as grain, much less of the energy on the tone than Stretch",
+      pure2 < pure - 0.1 and end - 2000 == 3840, (pure2, pure))
+settings(mode=1, grain=400, jitter=0)
+out, poss, end = play(2.0, 2.0, 30, pos=2000, layer=PAD + 0x30 + 4 * 0x70)
+check("x2 on the last of the five segments: pitch kept, playhead twice as fast", abs(freq(out[1000:]) - hz) < 6 and end - 2000 == 7680, (freq(out[1000:]), end))
 out, poss, end = play(1.0, 0.5, 60, pos=2000)
 check("x1/2 with the pitch up an octave (rate 1.0 / tempo 0.5): 882 Hz", abs(freq(out[2000:]) - 2 * hz) < 12, freq(out[2000:]))
 
@@ -271,7 +289,7 @@ check("near the end: frames past it are silence, nothing fetched beyond it", r =
 
 # ---- Grain / Jitter as destinations
 ST2 = 0xC0000000 + 0x56800 + 0x2E100
-UNTIL = ST2 + 8 + (Q * 2) * 84 + 12                  # pad 7's first layer: frames to its next grain
+UNTIL = ST2 + 8 + (Q * 5) * 84 + 12                  # pad 7's first segment: frames to its next grain
 
 
 def fresh_until(**kv):
@@ -299,7 +317,7 @@ setups = []
 e.stub(0x08067018, lambda: setups.append(e.arg(1)))
 e.uc.mem_write(CMD, struct.pack("<IIIIIHh", 0, 0, 0, 0x193, 2, 1, 1000))   # target Grain, slot 2, source ENV, 100 %
 e.call("env_mod_setup_b", PAD, CMD)
-e.uc.mem_write(PAD + 0x260 + 0x258 + 0x24 + 4, struct.pack("<f", 1.0))  # the first layer's envelope at full
+e.uc.mem_write(PAD + 0x260 + 0x258 + 0x24 + 4, struct.pack("<f", 1.0))  # the reading layer's (the first's) envelope at full
 check("ENV on Grain through the class B slot setup (env_mod_setup_b -> stretch_slot, not stock's): the layer's own envelope",
       setups == [] and fresh_until(grain=0) == 4800 - 128, (setups, e.r32(UNTIL)))
 e.uc.mem_write(CMD, struct.pack("<IIIIIHh", 0, 0, 0, 0x193, 2, 0xD, 1000))   # the slot now VEL, which stretch.c cannot read

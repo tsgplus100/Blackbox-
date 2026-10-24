@@ -10,9 +10,10 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JBGRAN11 (granular modulation, LFO Depth, Clip Speed and Stretch)
+## This fork: GRAINBOX 01 (granular modulation, LFO Depth, Clip Speed and Stretch)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN11`.
+A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `GRAINBOX` (the screen holds eight characters; the number is in the patch's name). Builds up to
+JBGRAN11 were named JBGRANn.
 Everything in JOEBOX 1 is still there.
 
 - **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
@@ -43,8 +44,8 @@ Everything in JOEBOX 1 is still there.
   x2, x3, x4. The clip's length on the grid (Beat Count, or Auto) is divided by it, so x1/2 takes twice as many beats
   and stays in sync. In Mode Repitch the clip plays that the stock way, by varispeed (x1/2 is an octave down, like
   tape); Stretch keeps the pitch (below). A preset from before Speed plays at x1. `src/stretch.c`.
-- **Clip Stretch** (JBGRAN11): a Clip pad's fourth tab is now `Strch` (Slicer pads keep LFO+): `Mode` (Repitch,
-  Stretch), `Grain` (10..200 ms, 40 % = 40 ms), `Jitter`, `Freeze`, then LFO 3's Wave, Rate, Depth, Trig. In Stretch
+- **Clip Stretch** (JBGRAN11; working from GRAINBOX 01, JBGRAN11's never engaged on a unit): a Clip pad's fourth
+  tab is now `Strch` (Slicer pads keep LFO+): `Mode` (Repitch, Stretch, Texture), `Grain` (10..200 ms, 40 % = 40 ms), `Jitter`, `Freeze`, then LFO 3's Wave, Rate, Depth, Trig. In Stretch
   the playhead, Sync, loop points and handovers are exactly stock's; what you hear is grains read from the playhead
   at the pitch alone (Pitch and its modulation still apply), so x1/2 is twice as long at the same pitch, and a clip
   at another tempo than its own keeps its key too. Each grain is a Hann window, half overlapping the last, and its
@@ -53,7 +54,9 @@ Everything in JOEBOX 1 is still there.
   ones pads and voices. Jitter moves each grain's start by up to half a grain at random (a smear); Freeze holds the
   point grains read from while the clip runs on in time. Grain and Jitter are modulation destinations: LFO2, LFO3,
   ENV, CC and the duck shapes (the sources Clip pads have). Clip LFO tab: like Granular, LFO 1's Waveform, Rate,
-  Depth, then LFO 2's five. A preset from before Mode plays Repitch.
+  Depth, then LFO 2's five. A preset from before Mode plays Repitch. `Texture` (GRAINBOX 01) is the same without the
+  lining up: grains start where they fall, so Grain and Jitter are heard as grain (a cloud, a buzz at short sizes).
+  Reverse playback stays stock (Repitch).
 - **Granular pad pages.** LFO tab: LFO 1's Waveform, Rate, Depth (its Beat Sync and Trig are off the page and keep
   their values), then all of LFO 2: `2 Wave`, `2 Rate`, `2 Depth`, `2 Trig`, `2 Offset`. Gran tab: the six grain
   knobs, then `Pitch Rnd`, `Pitch Mode`. Pos tab: its six, then `Scan`, `Lvl Rnd`. Conf tab: `Insert` and `Input` under Saturation (the per-pad insert effect
@@ -65,9 +68,9 @@ Everything in JOEBOX 1 is still there.
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran11.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-grainbox-01.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN and JBGRAN10 ran on a unit; Stretch
-(JBGRAN11) has only run in the emulator so far. Bank 1 has ~2 KB left. Keep your stock file (and JOEBOX 1's two
+(GRAINBOX 01) has only run in the emulator so far. Bank 1 has ~2 KB left. Keep your stock file (and JOEBOX 1's two
 files) to go back. Code: `src/gran.c`, `src/lfo.c`, `src/stretch.c`, `patches/gran.py`, `patches/stretch.py`,
 `test_gran.py`, `test_lfo.py`, `test_stretch.py`.
 

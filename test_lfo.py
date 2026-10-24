@@ -72,7 +72,7 @@ check("registered per LFO: Wave (12), Rate (15 synced lengths), Trig (Free, Retr
                                               (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"]),
                                               (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"]),
                                               (0x1CF, "Speed:", ["x1/4", "x1/3", "x1/2", "x2/3", "x3/4", "x1", "x3/2", "x2", "x3", "x4"]),
-                                              (0x192, "Mode:", ["Repitch", "Stretch"]), (0x196, "Freeze:", ["Off", "On"])], lists)
+                                              (0x192, "Mode:", ["Repitch", "Stretch", "Texture"]), (0x196, "Freeze:", ["Off", "On"])], lists)
 check("...and Offset and Depth 0..100 % (Depth: 0x1c8 / 0x1c9); then gran.c's Scan and Pitch Rnd", [(n[0], n[1], n[2], n[3]) for n in nums] ==
       [(0x1AC, "2 Offset:", 0, 1000), (0x1C8, "2 Depth:", 0, 1000), (0x1B0, "3 Offset:", 0, 1000), (0x1C9, "3 Depth:", 0, 1000),
        (0x1CA, "Scan:", 0, 1000), (0x1CB, "Pitch Rnd:", 0, 1000), (0x1CE, "Lvl Rnd:", 0, 1000), (0x193, "Grain:", 0, 1000), (0x195, "Jitter:", 0, 1000)], nums)

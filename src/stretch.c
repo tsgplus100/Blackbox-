@@ -9,14 +9,16 @@
  * Speed scales the ticks those two calls are handed, so everything stock derives from them follows: x1/2 makes the
  * clip twice as long on the grid, still in sync. Stock plays that by varispeed (an octave down, like tape).
  *
- * Stretch (JBGRAN 11): Mode "Stretch" keeps the pitch instead. The layer's read rate is 2^(pitch / 12 + mod) x layer
- * +0x18 (the tempo factor, FUN_08066454); the clip reader (FUN_080662e4, reached through filter.c's clip_read) goes
+ * Stretch (JBGRAN 11): Mode "Stretch" keeps the pitch instead. A read segment's rate (FUN_08066454 reads one of the
+ * pad's five, pad +0x30 + k * 0x70, for one of its two layers) is 2^(pitch / 12 + mod) x segment +0x18 (the tempo
+ * factor); the clip reader (FUN_080662e4, reached through filter.c's clip_read) goes
  * on reporting the frames that rate uses, so the playhead, Sync, loop points and the drift check are stock's. What
  * comes out is grains instead: each a Hann window Grain long, half overlapping the last, reading from where the
  * playhead was when it started at the pitch rate alone (rate / tempo factor). Each grain's start is moved, within
  * 10 ms, to where the source best continues the grain before it (WSOLA: the cross-correlation's peak, coarse then
  * fine), so the waveform runs on in phase instead of jumping at every grain (plain overlap-add detunes and buzzes). A
- * fresh start (a note, a resync, a handover) begins at full level, mid-window, so attacks stay sharp. Jitter moves each grain's start by up to half a
+ * fresh start (a note, a resync, a handover) begins at full level, mid-window, so attacks stay sharp. Mode
+ * "Texture" (GRAINBOX 01) leaves the grains where they fall, unaligned: Grain and Jitter are heard as grain. Jitter moves each grain's start by up to half a
  * grain either way; Freeze holds the point grains start from while the playhead (and the grid) runs on.
  * Grain and Jitter are modulation destinations (gran.c's MOD-page list): LFO 2 / 3 and ENV through the class B slot
  * setup (envmod.c's env_mod_setup_b hands them over: stretch_slot), CC and EXP1..LINR through the pad's vtable +0x40
@@ -64,11 +66,12 @@ static const uint8_t speed_num[SPEEDS] = {1, 1, 1, 2, 3, 1, 3, 2, 3, 4};
 static const uint8_t speed_den[SPEEDS] = {4, 3, 2, 3, 4, 1, 2, 1, 1, 1};
 
 /* Stretch's knobs: ids no table entry of stock's (or the mod's) has */
-#define P_MODE   0x192           /* Repitch (stock), Stretch */
+#define P_MODE   0x192           /* Repitch (stock), Stretch (grains lined up: WSOLA), Texture (grains as they fall) */
 #define P_GRAIN  0x193           /* 0..100 %: 10 .. 200 ms, on a square (40 % = 40 ms) */
 #define P_JITTER 0x195           /* 0..100 %: a grain's start moves up to half a grain either way */
 #define P_FREEZE 0x196           /* Off, On */
-static const char *const mode_names[2] = {"Repitch", "Stretch"};
+#define MODES    3
+static const char *const mode_names[MODES] = {"Repitch", "Stretch", "Texture"};
 static const char *const freeze_names[2] = {"Off", "On"};
 
 uint8_t *master_block(void);     /* master.c */
@@ -158,13 +161,16 @@ int clip_process(uint8_t *pad, void **ctx)
 
 /* ---- the stretch engine ---- */
 
-#define STRETCH_OFFSET (0x56800u + 0x2e100u)   /* master.c's last 0x4000 */
-#define STRETCH_MAGIC  0x53545232u             /* "STR2" */
+#define STRETCH_OFFSET (0x56800u + 0x2e100u)   /* master.c's last 0x5000 */
+#define STRETCH_MAGIC  0x53545233u             /* "STR3" */
 #define GRAINS 4
 #define SEEK   480                             /* WSOLA: how far a grain's start may move, frames */
 #define MATCH  256                             /* ...and how much of the source it compares */
-#define LAYER_A 0x260                          /* a class B pad's two layers (the second 0x410 on) */
-#define LAYER_B 0x670
+#define SEG0    0x30                           /* a class B pad's read segments: pad +0x30 + k * 0x70, five of them up to */
+#define SEG_STEP 0x70                          /* its first layer (pad +0x260); FUN_08066454 reads one, r4 there */
+#define SEGS    5
+#define LAYER_B 0x670                          /* the second layer (the first at pad +0x260, 0x410 before it) */
+#define LAYER_FILTER 0x14c                     /* what filter.c's clip_read is handed: the reading layer + 0x14c */
 struct grain {
     int32_t ip;                  /* where it reads: source frame ip + fp */
     float fp;
@@ -186,13 +192,13 @@ struct smod {
 struct stretch_state {
     uint32_t magic;
     uint32_t rng;
-    struct slayer layer[32];     /* pad * 2 + layer */
+    struct slayer layer[16 * SEGS];                /* pad * SEGS + segment */
     struct smod mod[16][2][3];   /* pad, Grain / Jitter, slot */
     float want[MATCH];           /* WSOLA: how the last grain goes on */
     float seek[2 * SEEK + MATCH];                  /* ...and the source around where the next one would start */
     float right[2 * SEEK + MATCH];                 /* a stereo source's right channel: fetched, not compared */
 };
-_Static_assert(sizeof(struct stretch_state) <= 0x4000, "stretch.c's state outgrew master.c's 0x4000");
+_Static_assert(sizeof(struct stretch_state) <= 0x5000, "stretch.c's state outgrew master.c's 0x5000");
 
 static struct stretch_state *stretch_state(void)
 {
@@ -255,8 +261,8 @@ void stretch_forget(const uint8_t *pad)
         m[k].ext = 0, m[k].code = 0;
 }
 
-/* the knob (0..1) moved by its slots, for this layer, clamped */
-static float modulated(struct stretch_state *s, uint8_t *pad, int layer_b, int t, float v)
+/* the knob (0..1) moved by its slots, for this layer (pad +0x260 or +0x670), clamped */
+static float modulated(struct stretch_state *s, uint8_t *pad, const uint8_t *layer, int t, float v)
 {
     const struct smod *m = s->mod[pad_index(pad)][t];
     for (int k = 0; k < 3; k++) {
@@ -264,7 +270,7 @@ static float modulated(struct stretch_state *s, uint8_t *pad, int layer_b, int t
         int amount = m[k].ext_amount;
         if (m[k].code) {
             amount = m[k].amount;
-            src = m[k].code == 1 ? pad + 0x260 + 0x258 + 0x24 + (layer_b ? 0x410 : 0)   /* the layer's envelope */
+            src = m[k].code == 1 ? layer + 0x258 + 0x24                                  /* the layer's envelope */
                                  : (const uint8_t *)lfo_source(pad, m[k].code - 5);
         }
         if (src)
@@ -401,12 +407,12 @@ static int32_t align(struct stretch_state *s, struct slayer *ly, void *src, int 
 }
 
 static void spawn(struct stretch_state *s, struct slayer *ly, int32_t ip, float fp, float glen, float jitter,
-                  float pitch, float x, void *src, int stereo, int32_t srclen)
+                  float pitch, float x, void *src, int stereo, int32_t srclen, int lineup)
 {
     float off = fp + rnd(s) * jitter * 0.5f * glen * pitch;
     int32_t io = (int32_t)off - (off < 0.0f);
     ip += io;
-    if (x == 0.0f)
+    if (x == 0.0f && lineup)
         ip += align(s, ly, src, stereo, srclen, ip);
     int k = 0;
     while (k < GRAINS - 1 && ly->g[k].dx > 0.0f)
@@ -423,30 +429,33 @@ static void spawn(struct stretch_state *s, struct slayer *ly, int32_t ip, float 
  * Called by filter.c's clip_read (which replaces the clip reader FUN_080662e4 @0x08066622) before anything else.
  * -1: Repitch, not this one's to read. Otherwise as FUN_080662e4: 0 past the source's end, 1 with n frames in out.
  */
-int stretch_read(float rate, uint8_t *pad, int32_t pos, int n, int *used, float *frac, void *scratch, void *out,
-                 void **result)
+int stretch_read(float rate, uint8_t *pad, uint8_t *filter, int32_t pos, int n, int *used, float *frac, void *scratch,
+                 void *out, void **result)
 {
-    if (!(rate > 0.0f) || setting_or(pad, P_MODE, 0) != 1)
+    unsigned mode = setting_or(pad, P_MODE, 0);
+    if (!(rate > 0.0f) || mode - 1u >= MODES - 1u)
         return -1;
     void *src = *(void **)(pad + 0x24);
-    uint8_t *layer = (uint8_t *)frac - 0x1c;
+    uint8_t *seg = (uint8_t *)frac - 0x1c;         /* the segment FUN_08066454 reads (its r4); frac is its +0x1c */
+    uint32_t off = (uint32_t)(seg - pad) - SEG0, si = off / SEG_STEP;
     struct stretch_state *s = stretch_state();
-    if (!s || !src || (layer != pad + LAYER_A && layer != pad + LAYER_B))
+    if (!s || !src || off % SEG_STEP || si >= SEGS)
         return -1;
+    const uint8_t *layer = filter - LAYER_FILTER;
     int32_t srclen = fw_src_len(src);
     if (srclen + 0xff < pos)
         return 0;
-    float tempo = *(const float *)(layer + 0x18);
+    float tempo = *(const float *)(seg + 0x18);
     float pitch = tempo > 0.01f ? rate / tempo : rate;
     pitch = pitch < 0.0625f ? 0.0625f : pitch > 8.0f ? 8.0f : pitch;
-    int lb = layer == pad + LAYER_B;
+    int lineup = mode == 1;
     unsigned k = setting_or(pad, P_GRAIN, 400);
-    float kg = modulated(s, pad, lb, 0, (float)(k > 1000 ? 1000 : k) * 0.001f);
+    float kg = modulated(s, pad, layer, 0, (float)(k > 1000 ? 1000 : k) * 0.001f);
     float glen = 48.0f * (10.0f + 190.0f * kg * kg);         /* frames */
     k = setting_or(pad, P_JITTER, 0);
-    float jitter = modulated(s, pad, lb, 1, (float)(k > 1000 ? 1000 : k) * 0.001f);
+    float jitter = modulated(s, pad, layer, 1, (float)(k > 1000 ? 1000 : k) * 0.001f);
     int freeze = setting_or(pad, P_FREEZE, 0) == 1;
-    struct slayer *ly = &s->layer[pad_index(pad) * 2 + lb];
+    struct slayer *ly = &s->layer[pad_index(pad) * SEGS + si];
 
     /* the frames stock's reader would use, its own arithmetic (FUN_080603ec) */
     float f0 = *frac, f = f0;
@@ -464,7 +473,7 @@ int stretch_read(float rate, uint8_t *pad, int32_t pos, int n, int *used, float 
         ly->live = 1;
         ly->frozen = 0;
         ly->until = 0;
-        spawn(s, ly, pos, f0, glen, 0.0f, pitch, 0.5f, src, 0, srclen);    /* as if it began half a grain ago: the next one is due now */
+        spawn(s, ly, pos, f0, glen, 0.0f, pitch, 0.5f, src, 0, srclen, 0);    /* as if it began half a grain ago: the next one is due now */
     }
     if (freeze && !ly->frozen) {
         ly->fz_ip = pos;
@@ -494,9 +503,9 @@ int stretch_read(float rate, uint8_t *pad, int32_t pos, int n, int *used, float 
                 float a = f0 + rate * (float)i;
                 int32_t ai = (int32_t)a;
                 if (ly->frozen)
-                    spawn(s, ly, ly->fz_ip, ly->fz_fp, glen, jitter, pitch, 0.0f, src, stereo, srclen);
+                    spawn(s, ly, ly->fz_ip, ly->fz_fp, glen, jitter, pitch, 0.0f, src, stereo, srclen, lineup);
                 else
-                    spawn(s, ly, pos + ai, a - (float)ai, glen, jitter, pitch, 0.0f, src, stereo, srclen);
+                    spawn(s, ly, pos + ai, a - (float)ai, glen, jitter, pitch, 0.0f, src, stereo, srclen, lineup);
                 ly->until += (int32_t)(glen * 0.5f);
                 if (ly->until <= 0)
                     ly->until = 1;
@@ -518,7 +527,7 @@ int stretch_read(float rate, uint8_t *pad, int32_t pos, int n, int *used, float 
 void stretch_register(void *table)
 {
     ((register_list_fn)FN(0x0808c0d8))(table, P_SPEED, "Speed:", speed_names, SPEEDS, "clipspeed");
-    ((register_list_fn)FN(0x0808c0d8))(table, P_MODE, "Mode:", mode_names, 2, "clipmode");
+    ((register_list_fn)FN(0x0808c0d8))(table, P_MODE, "Mode:", mode_names, MODES, "clipmode");
     ((register_num_fn)FN(0x0808c12c))(table, P_GRAIN, 8, "Grain:", 0, 1000, "clipgrain");
     ((register_num_fn)FN(0x0808c12c))(table, P_JITTER, 8, "Jitter:", 0, 1000, "clipjitter");
     ((register_list_fn)FN(0x0808c0d8))(table, P_FREEZE, "Freeze:", freeze_names, 2, "clipfreeze");
