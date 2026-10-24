@@ -61,20 +61,21 @@ RATES = ["32 bar", "16 bar", "8 bar", "4 bar", "2 bar", "1 bar", "1/2", "1/2T", 
 check("registered per LFO: Wave (12), Rate (15 synced lengths), Trig (Free, Retrig, Once); ids 0x1a9.. and 0x1ad..",
       [(l[0], l[1], l[2]) for l in lists] == [(0x1A9, "2 Wave:", WAVES), (0x1AA, "2 Rate:", RATES), (0x1AB, "2 Trig:", ["Free", "Retrig", "Once"]),
                                               (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"]),
-                                              (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"])], lists)
+                                              (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"]),
+                                              (0x1CF, "Speed:", ["x1/4", "x1/3", "x1/2", "x2/3", "x3/4", "x1", "x3/2", "x2", "x3", "x4"])], lists)
 check("...and Offset and Depth 0..100 % (Depth: 0x1c8 / 0x1c9); then gran.c's Scan and Pitch Rnd", [(n[0], n[1], n[2], n[3]) for n in nums] ==
       [(0x1AC, "2 Offset:", 0, 1000), (0x1C8, "2 Depth:", 0, 1000), (0x1B0, "3 Offset:", 0, 1000), (0x1C9, "3 Depth:", 0, 1000),
        (0x1CA, "Scan:", 0, 1000), (0x1CB, "Pitch Rnd:", 0, 1000), (0x1CE, "Lvl Rnd:", 0, 1000)], nums)
 check(f"the whole image fits flash bank 1: {len(img)} bytes of at most {0x08100000 - BASE} (the installer refuses a longer one)", len(img) <= 0x08100000 - BASE, len(img))
-check("fourteen distinct xml names (Pitch Mode is gran.c's list)", len({l[3] for l in lists} | {n[4] for n in nums}) == 14)
+check("fifteen distinct xml names (Pitch Mode is gran.c's list, Speed stretch.c's)", len({l[3] for l in lists} | {n[4] for n in nums}) == 15)
 e.stub(0x08093EF6, lambda: added.append((e.arg(1), e.arg(2))))
 e.call("lfo_defaults", 0x24073000, 0xDC, 0)
 check("pad defaults: stock's last entry, then LFO 2 = Sine, 1 bar, Free; LFO 3 = Random, 1/4, Retrig",
       added[:9] == [(0xDC, 0), (0x1A9, 4), (0x1AA, 5), (0x1AB, 0), (0x1AC, 0), (0x1AD, 8), (0x1AE, 8), (0x1AF, 1), (0x1B0, 0)], added)
-check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %, Scan, Pitch Rnd, Pitch Mode, Lvl Rnd at 0",
+check("...then the pad's insert: Off, Pebble, Electra, the six shared knobs, the Gate's five, and Input Off; then both Depths at 100 %, Scan, Pitch Rnd, Pitch Mode, Lvl Rnd at 0, Speed x1",
       added[9:] == [(0x1B6, 0), (0x1B7, 0), (0x1B8, 0), (0x1B9, 330), (0x1BA, 750), (0x1BB, 500), (0x1BC, 350), (0x1BD, 250), (0x1BE, 500),
-                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000), (0x1CA, 0), (0x1CB, 0), (0x1CD, 0), (0x1CE, 0)], added[9:])
-check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 88): both places that size one",
+                    (0x1C2, 800), (0x1C3, 0), (0x1C4, 0), (0x1C5, 200), (0x1C6, 0), (0x1C7, 0), (0x1C8, 1000), (0x1C9, 1000), (0x1CA, 0), (0x1CB, 0), (0x1CD, 0), (0x1CE, 0), (0x1CF, 5)], added[9:])
+check("a pad's settings store holds 96 entries (stock 64, of which 59 used; ours make 89): both places that size one",
       img[0x08093F26 - BASE:0x08093F28 - BASE] == bytes.fromhex("6021") and img[0x080949F0 - BASE:0x080949F2 - BASE] == bytes.fromhex("6021"))
 check("page 3 of the Sample and Multisample pad pages lists the eight knobs",
       words(img, 0x080EFCF0, 9, "H") == list(range(0x1A9, 0x1B1)) + [0] and words(img, 0x080EFB88, 9, "H") == list(range(0x1A9, 0x1B1)) + [0])

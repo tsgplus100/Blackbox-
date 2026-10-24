@@ -10,9 +10,9 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: JBGRAN 9 (granular modulation, LFO Depth)
+## This fork: JBGRAN10 (granular modulation, LFO Depth, Clip Speed)
 
-A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN 9`.
+A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `JBGRAN10`.
 Everything in JOEBOX 1 is still there.
 
 - **Grain Size and Density as modulation destinations.** Their MOD page opens like any other knob's. Every source
@@ -39,6 +39,10 @@ Everything in JOEBOX 1 is still there.
 - **Munchi's engine in bank 2** (JBGRAN 9): the delay itself moved, unchanged, into the second flash bank
   (`src/munchi_dsp.cpp`), which frees ~6.4 KB of bank 1. Munchi now needs `BBEXTRA.BIN` like Prism and Confetti:
   without the matching one it reads `---` and plays the stock delay.
+- **Clip Speed** (JBGRAN10): `Speed` on a Clip pad's Pos tab, after Sync: x1/4, x1/3, x1/2, x2/3, x3/4, x1, x3/2,
+  x2, x3, x4. The clip's length on the grid (Beat Count, or Auto) is divided by it, so x1/2 takes twice as many beats
+  and stays in sync. For now the clip plays that the stock way, by varispeed (x1/2 is an octave down, like tape); a
+  pitch-keeping stretch is next. A preset from before Speed plays at x1. `src/stretch.c`.
 - **Granular pad pages.** LFO tab: LFO 1's Waveform, Rate, Depth (its Beat Sync and Trig are off the page and keep
   their values), then all of LFO 2: `2 Wave`, `2 Rate`, `2 Depth`, `2 Trig`, `2 Offset`. Gran tab: the six grain
   knobs, then `Pitch Rnd`, `Pitch Mode`. Pos tab: its six, then `Scan`, `Lvl Rnd`. Conf tab: `Insert` and `Input` under Saturation (the per-pad insert effect
@@ -50,7 +54,7 @@ Everything in JOEBOX 1 is still there.
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran-9.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-jbgran10.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN ran on a unit; the MIDI, CC and duck
 sources (JBGRAN 2) and Depth (JBGRAN 3) have not been on hardware yet. JBGRAN 4
 only moved the Granular pads' knobs; JBGRAN 5's three new destinations and JBGRAN 6 / 7's knobs

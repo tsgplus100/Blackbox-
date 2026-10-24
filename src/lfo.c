@@ -63,6 +63,8 @@ void insert_defaults(void *store);   /* insert.c: the pad's insert effect, nine 
 
 void gran_register(void *table);   /* gran.c: Scan, Pitch Rnd, registered and defaulted with ours */
 void gran_defaults(void *store);
+void stretch_register(void *table);   /* stretch.c: Speed, likewise */
+void stretch_defaults(void *store);
 
 void lfo_register(void *table)
 {
@@ -75,7 +77,8 @@ void lfo_register(void *table)
         fw_register_num(table, P_LFO + 4 * k + 3, TYPE_PCT, label[k][3], 0, 1000, xml[k][3]);
         fw_register_num(table, P_DEPTH + k, TYPE_PCT, k ? "3 Depth:" : "2 Depth:", 0, 1000, k ? "lfo3depth" : "lfo2depth");
     }
-    gran_register(table);                       /* gran.c: Scan, Pitch Rnd */
+    gran_register(table);                       /* gran.c: Scan, Pitch Rnd, Pitch Mode, Lvl Rnd */
+    stretch_register(table);                    /* stretch.c: Speed */
 }
 
 /* Replaces the last entry of a pad's default settings (bl FUN_08093ef6 @0x0809423c, "0xdc = 0"): ours follow it.
@@ -90,6 +93,7 @@ void lfo_defaults(void *store, int param, int value)
     fw_store_add(store, P_DEPTH, 1000);
     fw_store_add(store, P_DEPTH + 1, 1000);
     gran_defaults(store);
+    stretch_defaults(store);
 }
 
 /* ---- the tab ---- */

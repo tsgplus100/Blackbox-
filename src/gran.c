@@ -140,7 +140,7 @@ struct gran_state {
 };
 #define GRAN_MAGIC  0x47524e36u  /* "GRN6" */
 #define GRAN_OFFSET (0x56800u + 0x2d100u)                /* master.c's block, behind comp.c's clipper: 0x1000 of its own */
-_Static_assert(sizeof(struct gran_state) <= 0x1000, "master.c gives gran.c 0x1000 bytes");
+_Static_assert(sizeof(struct gran_state) <= 0xf00, "master.c gives gran.c 0x1000 bytes; stretch.c has the last 0x100");
 
 static struct gran_state *gran_state(void)
 {

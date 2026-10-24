@@ -60,3 +60,7 @@ PATCHES += _GRAN
 from splash import PATCHES as _SPLASH  # noqa: E402
 
 PATCHES += _SPLASH
+
+from stretch import PATCHES as _STRETCH  # noqa: E402
+
+PATCHES += _STRETCH
