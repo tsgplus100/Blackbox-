@@ -25,6 +25,9 @@ PATCHES = [
     # Record pre-roll (src/preroll.c). Tools Rec page (address 0x40, page 1, 0x080eed60): RecToPlay, RecConfig,
     # Lead In, then Pre-roll in the first empty slot
     (0x080EED66, struct.pack("<H", 0), struct.pack("<H", 0x1B1)),
+    # PGM Out (src/pgm.c). Tools MIDI page (page 2, 0x080eeda8): Global In, Pad Record, MIDI Seq, PGM In, MIDI Out,
+    # USB Dev Out, then PGM Out and PGM Ch
+    (0x080EEDB4, struct.pack("<3H", 0, 0, 0), struct.pack("<3H", 0x1F0, 0x194, 0)),
     hook(0x08062108, 0x08061C94, "preroll_start"),      # WAV recorder: its start routine, on message 0x25
     hook(0x0806283A, 0x08069C38, "preroll_position"),   # WAV recorder, waiting: the position behind "start at once"
 ]

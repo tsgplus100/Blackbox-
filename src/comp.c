@@ -68,6 +68,8 @@ void master_register(void *table);
 void master_defaults(void *store);
 void preroll_register(void *table);
 void preroll_defaults(void *store);
+void pgm_register(void *table);
+void pgm_defaults(void *store);   /* pgm.c: PGM Out / PGM Ch on Tools > MIDI */
 void master_fx(float bpm, float *l, float *r, int n);
 int master_on(void);
 void lfo_tempo(float bpm);
@@ -92,6 +94,7 @@ void comp_register(void *table, int param, int type, const char *label, int min,
     fw_register_num(table, PARAM_SMASH_TIME, TYPE_PCT, "Time:", 0, 1000, "smashtime");
     master_register(table);
     preroll_register(table);
+    pgm_register(table);
     static const char *const clip_names[CLIP_TYPES] = {"Off", "Clean", "Diode"};
     fw_register_list(table, PARAM_CLIPPER, "Clipper:", clip_names, CLIP_TYPES, "clipper");
     fw_register_num(table, PARAM_CLIP, TYPE_PCT, "Clip:", 0, 1000, "clipamount");
@@ -107,6 +110,7 @@ void comp_defaults(void *store, int param, int value)
     fw_store_add(store, PARAM_SMASH_TIME, 500);
     master_defaults(store);
     preroll_defaults(store);
+    pgm_defaults(store);
     fw_store_add(store, PARAM_CLIPPER, CLIP_OFF);
     fw_store_add(store, PARAM_CLIP, 300);                    /* +5.4 dB into it once it is switched on */
     fw_store_add(store, PARAM_SHAPE, 800);                   /* mostly hard: rounded over the last fifth */

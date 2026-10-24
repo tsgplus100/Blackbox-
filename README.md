@@ -10,7 +10,7 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: GRAINBOX 02 (granular modulation, LFO Depth, Clip Speed and Stretch)
+## This fork: GRAINBOX 03 (granular modulation, LFO Depth, Clip Speed and Stretch)
 
 A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `GRAINBOX` (the screen holds eight characters; the number is in the patch's name). Builds up to
 JBGRAN11 were named JBGRANn.
@@ -59,6 +59,10 @@ Everything in JOEBOX 1 is still there.
   Depth, then LFO 2's five. A preset from before Mode plays Repitch. `Texture` (GRAINBOX 01) is the same without the
   lining up: grains start where they fall, so Grain and Jitter are heard as grain (a cloud, a buzz at short sizes).
   Reverse playback stays stock (Repitch).
+- **PGM Out** (GRAINBOX 03): a program change to an external synth. Tools > MIDI, after USB Dev Out: `PGM Out`
+  (0 = off, 1..128) and `PGM Ch` (1..16). It goes out once whenever either changes (turn the knob and the synth
+  follows), when a project with other values loads, and once after power-on, through stock's own MIDI send: the
+  MIDI Out jack and the USB host jack (and a computer on the USB device port). Saved with the project. `src/pgm.c`.
 - **Granular pad pages.** LFO tab: LFO 1's Waveform, Rate, Depth (its Beat Sync and Trig are off the page and keep
   their values), then all of LFO 2: `2 Wave`, `2 Rate`, `2 Depth`, `2 Trig`, `2 Offset`. Gran tab: the six grain
   knobs, then `Pitch Rnd`, `Pitch Mode`. Pos tab: its six, then `Scan`, `Lvl Rnd`. Conf tab: `Insert` and `Input` under Saturation (the per-pad insert effect
@@ -70,9 +74,9 @@ Everything in JOEBOX 1 is still there.
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-grainbox-02.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-grainbox-03.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN and JBGRAN10 ran on a unit; Stretch
-(GRAINBOX 01) and the new Pitch Mode sets (GRAINBOX 02) have only run in the emulator so far. Bank 1 has ~2 KB left. Keep your stock file (and JOEBOX 1's two
+(GRAINBOX 01) the new Pitch Mode sets (GRAINBOX 02) and PGM Out (GRAINBOX 03) have only run in the emulator so far. Bank 1 has ~1.5 KB left. Keep your stock file (and JOEBOX 1's two
 files) to go back. Code: `src/gran.c`, `src/lfo.c`, `src/stretch.c`, `patches/gran.py`, `patches/stretch.py`,
 `test_gran.py`, `test_lfo.py`, `test_stretch.py`.
 
