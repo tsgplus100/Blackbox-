@@ -10,7 +10,7 @@ An unofficial feature mod for the **original 1010music Blackbox** (not the Black
 **Get new builds by email:** sign up at <https://justinjoe.com/blackbox-mod> and I'll send a note when a new build is
 out (new FX, fixes). That's all the list is for.
 
-## This fork: GRAINBOX 01 (granular modulation, LFO Depth, Clip Speed and Stretch)
+## This fork: GRAINBOX 02 (granular modulation, LFO Depth, Clip Speed and Stretch)
 
 A fork of JOEBOX 1 that opens up Granular pads to modulation and gives LFO 2 / 3 a Depth. TOOLS shows `GRAINBOX` (the screen holds eight characters; the number is in the patch's name). Builds up to
 JBGRAN11 were named JBGRANn.
@@ -33,7 +33,9 @@ Everything in JOEBOX 1 is still there.
 - **Pitch Mode and Lvl Rnd** (JBGRAN 7). Pitch Mode snaps Pitch Rnd's detune to a set: Free (as before), Semi, Oct,
   5th+Oct, Major, Minor, Pent (minor pentatonic), Shimmr (an octave up or nothing). Pitch Rnd stays the reach: Oct
   at 100 % leaves about half the grains as they are and throws the rest an octave either way; under 50 % nothing
-  reaches the octave. Lvl Rnd gives each grain its own random level, down to silence at 100 % (a destination too).
+  reaches the octave. GRAINBOX 02 adds twelve sets: 6th+Oct, m7+Oct, M7+Oct, 9th+Oct, 4th+5th, 5th+9th, 2 Oct,
+  2Oct+5 (0, 7, 12, 19, 24), Maj7, Min7, Add9, 5ths (stacked fifths 7, 14, 21). A set reaching past the octave
+  reaches its top step at 100 % (9th+Oct: 14 semitones, 2 Oct: 24). A grain never plays faster than 8x. Lvl Rnd gives each grain its own random level, down to silence at 100 % (a destination too).
 - **Power-on screen** (JBGRAN 8): SYEN, in italic, built of the screen font's `#` over six lines (312 x 96
   pixels), instead of "blackbox / by 1010music / 3.1.9". Error messages (no card, a file missing) still show over
   its lower lines. `src/splash.c`.
@@ -68,9 +70,9 @@ Everything in JOEBOX 1 is still there.
   depth. On Sample, Multisample and Granular pads every source reaches them; on Clip and Slicer pads only CC and the
   duck shapes do (those pads keep no slot list). A preset from before Depth existed plays at full depth.
 
-Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-grainbox-01.json`
+Install as below, with the patch for this build: `python3 apply.py path/to/BLACKBOX.bin docs/blackbox-mod-grainbox-02.json`
 gives `BLACKBOX.bin` and `BBEXTRA.BIN`; both go on the card. JB1 GRAN and JBGRAN10 ran on a unit; Stretch
-(GRAINBOX 01) has only run in the emulator so far. Bank 1 has ~2 KB left. Keep your stock file (and JOEBOX 1's two
+(GRAINBOX 01) and the new Pitch Mode sets (GRAINBOX 02) have only run in the emulator so far. Bank 1 has ~2 KB left. Keep your stock file (and JOEBOX 1's two
 files) to go back. Code: `src/gran.c`, `src/lfo.c`, `src/stretch.c`, `patches/gran.py`, `patches/stretch.py`,
 `test_gran.py`, `test_lfo.py`, `test_stretch.py`.
 

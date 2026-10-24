@@ -70,7 +70,8 @@ RATES = ["32 bar", "16 bar", "8 bar", "4 bar", "2 bar", "1 bar", "1/2", "1/2T", 
 check("registered per LFO: Wave (12), Rate (15 synced lengths), Trig (Free, Retrig, Once); ids 0x1a9.. and 0x1ad..",
       [(l[0], l[1], l[2]) for l in lists] == [(0x1A9, "2 Wave:", WAVES), (0x1AA, "2 Rate:", RATES), (0x1AB, "2 Trig:", ["Free", "Retrig", "Once"]),
                                               (0x1AD, "3 Wave:", WAVES), (0x1AE, "3 Rate:", RATES), (0x1AF, "3 Trig:", ["Free", "Retrig", "Once"]),
-                                              (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"]),
+                                              (0x1CD, "Pitch Mode:", ["Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr", "6th+Oct", "m7+Oct", "M7+Oct",
+                                                                        "9th+Oct", "4th+5th", "5th+9th", "2 Oct", "2Oct+5", "Maj7", "Min7", "Add9", "5ths"]),
                                               (0x1CF, "Speed:", ["x1/4", "x1/3", "x1/2", "x2/3", "x3/4", "x1", "x3/2", "x2", "x3", "x4"]),
                                               (0x192, "Mode:", ["Repitch", "Stretch", "Texture"]), (0x196, "Freeze:", ["Off", "On"])], lists)
 check("...and Offset and Depth 0..100 % (Depth: 0x1c8 / 0x1c9); then gran.c's Scan and Pitch Rnd", [(n[0], n[1], n[2], n[3]) for n in nums] ==

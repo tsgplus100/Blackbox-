@@ -8,8 +8,11 @@
  *              Scan alone says where they read).
  *   Pitch Rnd  0x1cb, 0..100 % = up to an octave either way: each grain plays at its own random detune.
  *   Pitch Mode 0x1cd (JBGRAN 7), a list: Free (any detune), or the detune snapped to the nearest step of a set:
- *              Semi, Oct, 5th+Oct, Major, Minor, Pent (minor pentatonic), Shimmr (octave up only). Pitch Rnd stays the
- *              reach, so with Oct at 100 % half the grains play as they are and half jump an octave.
+ *              Semi, Oct, 5th+Oct, Major, Minor, Pent (minor pentatonic), Shimmr (octave up only); GRAINBOX 01 adds
+ *              6th+Oct, m7+Oct, M7+Oct, 9th+Oct, 4th+5th, 5th+9th, 2 Oct, 2Oct+5, Maj7, Min7, Add9, 5ths (stacked
+ *              fifths: 7, 14, 21). Pitch Rnd stays the reach, up to the set's top step (an octave for the first
+ *              eight, Free included; 14 .. 24 semitones for those reaching past it), so with Oct at 100 % half the
+ *              grains play as they are and half jump an octave.
  *   Lvl Rnd    0x1ce (JBGRAN 7): each grain at its own random level, down to silence at 100 %. Kept in the grain's
  *              spare word +0x3c (gain q15, tag "LV" in the top half) and applied where the grain's pan gains are
  *              worked out (gran_thunk.S, both calls in FUN_08057db8).
@@ -291,20 +294,37 @@ static float random(struct gran_state *s)                /* -1 .. 1 */
     return (float)(int32_t)s->rng * (1.0f / 2147483648.0f);
 }
 
-/* Pitch Mode's sets: bit k = k semitones (0..12) is a step; the same steps downwards, but for Shimmr (up only). */
-#define PMODES 8
-static const char *const pmode_names[PMODES] = {"Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr"};
-static const uint16_t pmode_steps[PMODES] = {
-    0, 0x1fff, 1 | 1 << 12, 1 | 1 << 7 | 1 << 12, 1 | 1 << 4 | 1 << 7 | 1 << 12, 1 | 1 << 3 | 1 << 7 | 1 << 12,
-    1 | 1 << 3 | 1 << 5 | 1 << 7 | 1 << 10 | 1 << 12, 1 | 1 << 12,
+/* Pitch Mode's sets: bit k = k semitones (0..24) is a step; the same steps downwards, but for Shimmr (up only).
+   New sets go at the end: a preset stores the index. */
+#define S(k) (1u << (k))
+#define PMODES 20
+static const char *const pmode_names[PMODES] = {
+    "Free", "Semi", "Oct", "5th+Oct", "Major", "Minor", "Pent", "Shimmr",
+    "6th+Oct", "m7+Oct", "M7+Oct", "9th+Oct", "4th+5th", "5th+9th", "2 Oct", "2Oct+5", "Maj7", "Min7", "Add9", "5ths",
 };
+static const uint32_t pmode_steps[PMODES] = {
+    0, 0x1fff, S(0) | S(12), S(0) | S(7) | S(12), S(0) | S(4) | S(7) | S(12), S(0) | S(3) | S(7) | S(12),
+    S(0) | S(3) | S(5) | S(7) | S(10) | S(12), S(0) | S(12),
+    S(0) | S(9) | S(12), S(0) | S(10) | S(12), S(0) | S(11) | S(12), S(0) | S(12) | S(14),
+    S(0) | S(5) | S(7) | S(12), S(0) | S(7) | S(14), S(0) | S(12) | S(24), S(0) | S(7) | S(12) | S(19) | S(24),
+    S(0) | S(4) | S(7) | S(11) | S(12), S(0) | S(3) | S(7) | S(10) | S(12), S(0) | S(4) | S(7) | S(12) | S(14),
+    S(0) | S(7) | S(14) | S(21),
+};
+
+/* how far Pitch Rnd reaches at 100 % for a set: its top step, an octave at least */
+static float reach(unsigned mode)
+{
+    uint32_t v = pmode_steps[mode];
+    int top = v ? 31 - __builtin_clz(v) : 12;
+    return (float)(top < 12 ? 12 : top);
+}
 #define SHIMMER 7
 
 /* The step of the mode's set nearest to `semis` (-12..12) */
 static float snap(float semis, unsigned mode)
 {
     float a = semis < 0.0f ? -semis : semis, best = 0.0f, gap = 99.0f;
-    for (int k = 0; k <= 12; k++)
+    for (int k = 0; k <= 24; k++)
         if (pmode_steps[mode] >> k & 1) {
             float d = a - (float)k;
             d = d < 0.0f ? -d : d;
@@ -393,12 +413,17 @@ void gran_grain_start(uint8_t *pad, void *now, uint8_t *voice, int first, int x,
     *fixed = fixpos;
     if (!s)
         return;
-    if (detune > 0.0f) {                                /* up to an octave either way at 100 % */
-        float semis = random(s) * 12.0f * detune;
+    if (detune > 0.0f) {                                /* up to the set's reach either way at 100 % */
+        float semis = random(s) * reach(mode) * detune;
         if (mode)
             semis = snap(semis, mode);
-        if (semis != 0.0f)
-            *(float *)(grain + GRAIN_RATE) *= fw_powf(2.0f, semis * (1.0f / 12.0f));
+        if (semis != 0.0f) {
+            /* at most 8x (stock's own cap on the clip reader), or what stock set if that is more: the renderer
+               fetches n x rate + 8 frames clamped to its buffer, but its kernel reads n x rate whatever it got */
+            float *rate = (float *)(grain + GRAIN_RATE), r = *rate * fw_powf(2.0f, semis * (1.0f / 12.0f));
+            float cap = *rate > 8.0f ? *rate : 8.0f;
+            *rate = r > cap ? cap : r;
+        }
     }
     float u = 0.5f + 0.5f * random(s);                  /* 0..1 */
     *(uint32_t *)(grain + GRAIN_LEVEL) = 0x4c560000u | (uint32_t)(32767.0f * (1.0f - level * u));

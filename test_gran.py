@@ -308,8 +308,23 @@ knobs(0, 1000, mode=2)
 hits = [semis(start_at(40000)[2]) for _ in range(2000)]
 share = hits.count(0.0) / len(hits)
 check(f"Oct at 100 %: about half the grains as they are ({share:.0%}), the rest an octave either way", 0.45 < share < 0.55, share)
-knobs(0, 1000, mode=9)
-check("a Pitch Mode past the list's end reads as Free", len(spread(9, 1000, 100)) > 90)
+def both(*up):
+    return sorted({-float(k) for k in up} | {float(k) for k in up})
+
+
+for mode, name, up in ((8, "6th+Oct", (0, 9, 12)), (9, "m7+Oct", (0, 10, 12)), (10, "M7+Oct", (0, 11, 12)),
+                       (11, "9th+Oct", (0, 12, 14)), (12, "4th+5th", (0, 5, 7, 12)), (13, "5th+9th", (0, 7, 14)),
+                       (14, "2 Oct", (0, 12, 24)), (15, "2Oct+5", (0, 7, 12, 19, 24)), (16, "Maj7", (0, 4, 7, 11, 12)),
+                       (17, "Min7", (0, 3, 7, 10, 12)), (18, "Add9", (0, 4, 7, 12, 14)), (19, "5ths", (0, 7, 14, 21))):
+    got = spread(mode, 1000, 600)
+    check(f"Pitch Mode {name} (GRAINBOX 01): {', '.join(map(str, up))} either way, reaching its top step at 100 %", got == both(*up), got)
+knobs(0, 1000, mode=14)
+r = [start_at(40000, rate=3.0)[2] for _ in range(300)]
+check("2 Oct on a grain already at 3x: up to 8x and no further (12x would be over the cap)", max(r) == 8.0 and min(r) < 0.8, (min(r), max(r)))
+r = [start_at(40000, rate=10.0)[2] for _ in range(100)]
+check("...a grain stock started above 8x is never sped up past where it was", max(r) == 10.0, max(r))
+knobs(0, 1000, mode=20)
+check("a Pitch Mode past the list's end reads as Free", len(spread(20, 1000, 100)) > 90)
 
 # Lvl Rnd: the grain's spare word, then the renderer's pan gains
 LEVEL = GRAIN + 0x3C
