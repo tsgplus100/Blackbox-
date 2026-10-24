@@ -311,6 +311,25 @@ check("switching back to Delay: the three lines are cleared, then stock runs",
 block([(0.0, 0.0)] * N)
 check("... only once", calls == ["stock"], calls)
 
+from unicorn import UC_HOOK_CODE
+# --- bank 2 not live (JBGRAN 9: the engine lives up there, munchi_dsp.cpp): Munchi is the stock delay, never the engine
+B2CHK = 0x2405FFD0 + 35                                # cpu.c's verdict: 1 = bank 2 matches this image, 2 = it does not
+was = e.r8(B2CHK)
+store(type=1, wand=250, random=300, fb=400, freeze=0)
+run(0.05, noise)                                       # Munchi running
+entered = []
+hb = e.uc.hook_add(UC_HOOK_CODE, lambda uc, a, s_, _: entered.append(a), begin=e.sym["munchi_block"] & ~1, end=e.sym["munchi_block"] & ~1)
+e.uc.mem_write(B2CHK, b"\x02")
+block([noise(i) for i in range(N)])
+first = list(calls)
+block([noise(i) for i in range(N)])
+check("bank 2 not the one this image was linked with: Munchi selected plays the stock delay (lines handed back once)",
+      first == [("clear", 0x30), ("clear", 0x4C), ("clear", 0x68), "stock"] and calls == ["stock"] and not entered, (first, calls, len(entered)))
+e.uc.mem_write(B2CHK, bytes([was]))
+block([noise(i) for i in range(N)])
+check("...bank 2 back: Munchi starts afresh from its own engine again", entered and "stock" not in calls, (len(entered), calls))
+e.uc.hook_del(hb)
+
 # --- cost
 from unicorn import UC_HOOK_CODE
 store(type=1, wand=250, random=300, fb=400, freeze=0)

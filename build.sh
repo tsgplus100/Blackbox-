@@ -17,13 +17,15 @@ BANK2_SRCS="prism confetti insert_dsp rev4"
 # BANK 2 IS FOR LEAF DSP ONLY. A function the firmware reaches through a patched call site must stay in bank 1,
 # or a bad bank 2 faults before anything can check it - which is how 3.2.m's first cut would have boot-looped.
 # munchi.o holds munchi_process, munchi_register, munchi_list and fx_screen_msg, all hooks, so it stays in bank 1.
-# Splitting Munchi's engine out into its own translation unit would let the engine go up; not done yet.
+# Munchi's engine has its own translation unit since JBGRAN 9 (src/munchi_dsp.cpp), and that one goes up; munchi.cpp
+# (the hooks, the settings, the dispatch) stays here.
 BANK2_OBJS=""
+[ "${MUNCHI:-1}" = 1 ] && BANK2_OBJS="out/obj/munchi_dsp.o"
 
 # One id for both banks in a build, so bank 1 can tell a matching bank 2 from a stale one. It is a hash of the
 # bank 2 sources and the flags, NOT a timestamp: identical code has to give an identical id, or reflashing an
 # older image would need bank 2 reprogrammed even though the payload up there is already right.
-B2_ID=$(for b in $BANK2_SRCS; do cat "src/$b.c"; done | cat - src/b2head.c | shasum -a 256 | cut -c1-8 | awk '{printf "0x%s", $1}')
+B2_ID=$( (for b in $BANK2_SRCS; do cat "src/$b.c"; done; [ -n "$BANK2_OBJS" ] && cat src/munchi_dsp.cpp src/munchi_dsp.h src/munchi/munchi_port.h src/munchi/tempo/*.h src/munchi/daisysp/*.h) | cat - src/b2head.c | shasum -a 256 | cut -c1-8 | awk '{printf "0x%s", $1}')
 
 CFLAGS="-mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16 -Os -ffreestanding -nostdlib -fno-builtin -Wall -Wextra -Werror -DB2_ID=$B2_ID -DB2LOAD_WRITE=${B2LOAD_WRITE:-1}"
 
@@ -40,6 +42,12 @@ CFLAGS="-mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16 -Os -ffreestandi
 arm-none-eabi-g++ $MUNCHI_FLAG -mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16 -Os -ffreestanding -nostdlib -fno-exceptions \
   -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -fno-math-errno -std=gnu++17 -Wall -Werror -Wno-unused-function \
   -Wno-class-memaccess -Wno-unused-but-set-variable -Wno-unused-variable -Wno-unused-parameter -isystem src/munchi/sys -c -o out/munchi.o src/munchi.cpp
+if [ -n "$BANK2_OBJS" ]; then
+  arm-none-eabi-g++ -mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16 -Os -ffreestanding -nostdlib -fno-exceptions \
+    -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -fno-math-errno -std=gnu++17 -Wall -Werror -Wno-unused-function \
+    -Wno-class-memaccess -Wno-unused-but-set-variable -Wno-unused-variable -Wno-unused-parameter -isystem src/munchi/sys \
+    -c -o out/obj/munchi_dsp.o src/munchi_dsp.cpp
+fi
 
 OBJS=""
 for f in src/*.c; do
@@ -60,7 +68,7 @@ for o in $BANK2_OBJS; do B2_PAT="$B2_PAT $o(.text .text.* .rodata .rodata.*)"; d
 sed -e "s|@B2_OBJS@|$B2_PAT|" src/cave.ld.in > out/cave.ld
 
 arm-none-eabi-gcc -mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16 -nostdlib \
-  -T out/cave.ld -Wl,-e,0 -Wl,-Map=out/cave.map -o out/cave.elf $OBJS out/munchi.o
+  -T out/cave.ld -Wl,-e,0 -Wl,-Map=out/cave.map -o out/cave.elf $OBJS out/munchi.o $BANK2_OBJS
 
 arm-none-eabi-objcopy -O binary -j .cave out/cave.elf out/cave.bin
 arm-none-eabi-objcopy -O binary -j .b2head -j .bank2 out/cave.elf out/bank2.raw

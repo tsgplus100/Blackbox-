@@ -34,22 +34,17 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "motion.h"
+#include "munchi_dsp.h"
 #include <new>
 
 #pragma GCC optimize("Os", "no-tree-loop-distribute-patterns")
 
-#ifndef MUNCHI_OFF
-#include "munchi/tempo/granularDelay.h"
-#include "munchi/tempo/reverb.h"
-#include "munchi/tempo/SimpleCompressor.h"
-#else
 namespace daisysp {
 static inline float fclamp(float x, float lo, float hi)
 {
     return x < lo ? lo : x > hi ? hi : x;
 }
 }
-#endif
 
 #define FN(addr) ((addr) | 1u)
 
@@ -149,7 +144,7 @@ typedef void (*list_add_fn)(void *list, int param, int value);
 enum { ALG_DELAY, ALG_MUNCHI, ALG_MOTION, ALG_RELAPSE, ALG_CONFETTI, ALGS };
 #ifndef MUNCHI_OFF
 static const char *const type_names[ALGS] = {"Delay", "Munchi", "Motion", "Relapse", "Confetti"};
-static const char *const type_names_none[ALGS] = {"Delay", "Munchi", "Motion", "Relapse", "---"};   /* no bank 2 payload */
+static const char *const type_names_none[ALGS] = {"Delay", "---", "Motion", "Relapse", "---"};   /* no bank 2 payload */
 #else
 static const char *const type_names[ALGS] = {"Delay", "---", "Motion", "Relapse", "Confetti"};
 static const char *const type_names_none[ALGS] = {"Delay", "---", "Motion", "Relapse", "---"};
@@ -221,27 +216,8 @@ static inline uint32_t stack_now(void)
 #else
 #define MUNCHI_BUILT 1
 #endif
-#define MAGIC 0x4d554e31u                                 /* "MUN1" */
 #define MAXN 128
 
-#ifndef MUNCHI_OFF
-struct Munchi {
-    uint32_t magic;
-    mbuf_t *live, *frozen;
-    granularDelay delay;
-    daisysp::Reverb reverb;
-    SimpleCompressor comp;
-    clockManager clock;
-    float wet_amt, reverb_amt, reverb_amt_target, reverb_boost, reverb_boost_target;
-    float pulse_phase;
-    long pulses;
-    int last_wand, last_random, last_feedback, last_freeze, last_duck;
-    float clock_mul;
-    float wl[MAXN], wr[MAXN];
-};
-
-static_assert(sizeof(Munchi) <= 96000 * 4, "Munchi's state must fit the stock delay's 2 s line");
-#endif
 
 static inline void *line_ptr(uint8_t *obj, int line)
 {
@@ -385,123 +361,6 @@ void munchi_list(void *list, void *store)
     DROP_GUI(21, type);                     /* GUI: the page for this type is built and we are leaving */
 }
 
-#ifndef MUNCHI_OFF
-static void zero(void *p, uint32_t bytes)
-{
-    uint32_t *w = (uint32_t *)p;
-    for (uint32_t i = 0; i < bytes / 4; i++)
-        w[i] = 0;
-}
-
-static Munchi *start(uint8_t *obj)
-{
-    void *live = line_ptr(obj, LINE_LIVE), *frozen = line_ptr(obj, LINE_FREEZE), *st = line_ptr(obj, LINE_STATE);
-    if (!live || !frozen || !st || line_floats(obj, LINE_STATE) * 4 < sizeof(Munchi))
-        return nullptr;
-    uint32_t frames = line_floats(obj, LINE_LIVE);              /* floats -> 16-bit stereo frames: same count */
-    if (line_floats(obj, LINE_FREEZE) < frames)
-        frames = line_floats(obj, LINE_FREEZE);
-    zero(live, frames * 4);
-    zero(frozen, frames * 4);
-    zero(st, sizeof(Munchi));
-    Munchi *m = new (st) Munchi();                              /* TEMPO's classes expect zeroed memory */
-    m->live = (mbuf_t *)live;
-    m->frozen = (mbuf_t *)frozen;
-    m->reverb.Init(48000.f);
-    m->reverb.SetAmount(0.f);
-    m->reverb.SetInputGain(.3f);
-    m->reverb.SetLowpass(1.f);
-    m->comp.Init();
-    m->delay.Init(m->live, m->frozen, frames, &m->clock, false);
-    m->wet_amt = 1.f;
-    m->last_wand = m->last_random = m->last_feedback = m->last_freeze = m->last_duck = -1;
-    m->clock_mul = 1.f;
-    if (!MUNCHI_RNG)
-        MUNCHI_RNG = 0x2545f491u;
-    m->magic = MAGIC;
-    return m;
-}
-
-/* FxEngine::setGranularMain / setGranularFeedback, as Munchi's wrapper has them */
-static void set_main(Munchi *m, float val)
-{
-    m->delay.setMainControl(val);
-    if (val > .55f) {
-        float norm = (val - .55f) / (1.f - .55f);
-        float r = chompi::fast_sqrt(norm);                     /* powf(norm, .5f) */
-        m->reverb_amt_target = .25f + .65f * r;
-        m->reverb_boost_target = val > .6f ? .3f : 0.f;
-    } else {
-        m->reverb_amt_target = 0.f;
-        m->reverb_boost_target = 0.f;
-    }
-}
-
-static void controls(Munchi *m, const void *store)
-{
-    int wand = fw_setting(store, P_WAND), random = fw_setting(store, P_RANDOM);
-    int feedback = fw_setting(store, P_FEEDBK), freeze = fw_setting(store, P_FREEZE) != 0;
-    unsigned clock = (unsigned)fw_setting(store, P_CLOCK), width = (unsigned)fw_setting(store, P_WIDTH);
-    int duck = fw_setting(store, P_DUCK);
-    m->clock_mul = clock_mul[clock < 3 ? clock : 0];
-    MUNCHI_SPREAD = width_mul[width < 4 ? width : 0];
-    if (wand != m->last_wand)
-        set_main(m, daisysp::fclamp(wand * .001f, 0.f, 1.f));
-    if (random != m->last_random)
-        m->delay.setAltControl(daisysp::fclamp(random * .001f, 0.f, 1.f));
-    if (feedback != m->last_feedback || duck != m->last_duck) {
-        float v = daisysp::fclamp(feedback * .001f, 0.f, 1.f);
-        m->delay.setFeedback(v);
-        float amount = duck == 1 ? 0.f : duck == 2 ? .5f : duck == 3 ? 1.f : (v > .6f ? (v - .6f) / (1.f - .6f) : 0.f);
-        m->comp.setAmount(amount);
-    }
-    if (m->last_freeze >= 0 && freeze != m->last_freeze && freeze != m->delay.getBufferLock())
-        m->delay.toggleBufferLock();
-    m->last_wand = wand;
-    m->last_random = random;
-    m->last_feedback = feedback;
-    m->last_freeze = freeze;
-    m->last_duck = duck;
-}
-
-static void run_clock(Munchi *m, float bpm, int frames)
-{
-    if (!(bpm > 0.f))
-        bpm = 120.f;
-    bpm *= m->clock_mul;            /* note lengths that would not fit the 4 s buffer are clamped in granularDelay.h */
-    m->clock.setBpm(bpm);
-    m->pulse_phase += bpm * (24.f / 60.f) * (float)frames * (1.f / 48000.f);
-    while (m->pulse_phase >= 1.f) {
-        m->pulse_phase -= 1.f;
-        m->delay.setClockPulse();
-        if (++m->pulses % 12 == 0)
-            m->delay.setClockEdge();
-    }
-}
-
-static inline void process48(Munchi *m, float xl, float xr, float *ol, float *orr)
-{
-    fonepole(m->wet_amt, 1.f, .001f);
-    fonepole(m->reverb_amt, m->reverb_amt_target, .001f);
-    fonepole(m->reverb_boost, m->reverb_boost_target, .001f);
-    float wl = xl * m->wet_amt, wr = xr * m->wet_amt;
-    float dl = xl, dr = xr;                         /* the ducking sidechain: the send itself */
-    float yl = 0.f, yr = 0.f;
-    m->delay.write(wl, wr);
-    m->delay.read(&yl, &yr);
-    m->reverb.SetAmount(m->reverb_amt * m->reverb_amt * .8f);
-    m->reverb.SetTime(m->reverb_amt);
-    m->reverb.SetLowpass(m->reverb_amt * .55f + .4f);
-    m->reverb.SetDiffusion(m->reverb_amt * .6f);
-    yl += wl * m->reverb_boost;
-    yr += wr * m->reverb_boost;
-    m->reverb.Process(&yl, &yr);
-    m->comp.Process(&yl, &yr, &dl, &dr);
-    *ol = yl;
-    *orr = yr;
-}
-
-#endif
 
 /* the send in (through the stock gate) and the block length */
 static int slot_in(uint8_t *obj, uint32_t *bufs, void **bus, float **il, float **ir)
@@ -560,8 +419,8 @@ int munchi_process(uint8_t *obj, uint32_t *bufs)
      * quarter speed (103 blocks a second on the test unit, button lights stuttering) for as long as bank 2 stayed off
      * with Confetti selected - which is the state every bank 2 rewrite passes through.
      */
-    if (alg == ALG_CONFETTI && !b2_live())
-        alg = ALG_DELAY;
+    if ((alg == ALG_CONFETTI || alg == ALG_MUNCHI) && !b2_live())
+        alg = ALG_DELAY;                        /* Munchi's engine is in bank 2 too (munchi_dsp.cpp, JBGRAN 9) */
     if (alg == ALG_MOTION) {                    /* Motion runs the stock delay, so it keeps stock's lines and MODE */
         alg = ALG_DELAY;
         motion_kind = fw_setting(store, P_MO_KIND);
@@ -632,19 +491,26 @@ int munchi_process(uint8_t *obj, uint32_t *bufs)
     }
 #ifndef MUNCHI_OFF
     if (alg == ALG_MUNCHI) {
-        Munchi *m = (Munchi *)line_ptr(obj, LINE_STATE);
-        if (fresh || !m || m->magic != MAGIC || m->live != line_ptr(obj, LINE_LIVE) ||
-            m->frozen != line_ptr(obj, LINE_FREEZE))
-            m = start(obj);
         DROP(7, alg);                   /* munchi branch */
         MODE_SET(ALG_MUNCHI);
-        if (m) {
+        uint8_t *st = (uint8_t *)line_ptr(obj, LINE_STATE);
+        mbuf_t *live = (mbuf_t *)line_ptr(obj, LINE_LIVE), *frozen = (mbuf_t *)line_ptr(obj, LINE_FREEZE);
+        uint32_t frames = line_floats(obj, LINE_LIVE);         /* floats -> 16-bit stereo frames: same count */
+        if (line_floats(obj, LINE_FREEZE) < frames)
+            frames = line_floats(obj, LINE_FREEZE);
+        if (st && live && frozen && line_floats(obj, LINE_STATE) * 4 >= MUNCHI_STATE_BYTES) {
+            struct munchi_params p;
+            p.wand = fw_setting(store, P_WAND);
+            p.random = fw_setting(store, P_RANDOM);
+            p.feedback = fw_setting(store, P_FEEDBK);
+            p.freeze = fw_setting(store, P_FREEZE) != 0;
+            p.clock = fw_setting(store, P_CLOCK);
+            p.width = fw_setting(store, P_WIDTH);
+            p.duck = fw_setting(store, P_DUCK);
             int mn2 = slot_in(obj, bufs, &bus, &il, &ir);
-            controls(m, store);
-            run_clock(m, *(float *)((uint8_t *)bufs[0] + 0x18), mn2);
-            for (int i = 0; i < mn2; i++)
-                process48(m, il[i], ir[i], &m->wl[i], &m->wr[i]);
-            slot_out(obj, bus, m->wl, m->wr, mn2);
+            const float *wr, *wl = munchi_block(st, live, frozen, frames, &p, *(float *)((uint8_t *)bufs[0] + 0x18), il, ir,
+                                                 mn2, fresh, &wr);
+            slot_out(obj, bus, wl, wr, mn2);
             return 1;
         }
         return fw_process(obj, bufs);
